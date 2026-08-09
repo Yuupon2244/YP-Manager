@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+    >
+
+    <title>YP-Manager 待機部屋管理</title>
+
+    <link
+        rel="stylesheet"
+        href="room-admin.css"
+    >
+
+</head>
+
+
+<body>
+
+
+<div class="app">
+
+
+    <!-- ================================= -->
+    <!-- ヘッダー -->
+    <!-- ================================= -->
+
+    <header class="header">
+
+        <div class="header-title">
+            🏠 待機部屋管理
+        </div>
+
+
+        <div
+            id="connectionStatus"
+            class="status-text"
+        >
+            🔄 認証確認中…
+        </div>
+
+    </header>
+
+
+
+    <!-- ================================= -->
+    <!-- ログイン済みユーザー -->
+    <!-- ================================= -->
+
+    <section
+        id="authBar"
+        class="card"
+        style="display:none;"
+    >
+
+        <div
+            style="
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                gap:12px;
+                flex-wrap:wrap;
+            "
+        >
+
+            <div>
+
+                🔐
+                <strong id="loginDisplayName">
+                    Moderator
+                </strong>
+
+                <span id="loginRole">
+                    / Moderator
+                </span>
+
+            </div>
+
+
+            <button
+                id="logoutButton"
+                type="button"
+                class="secondary-button"
+                style="
+                    width:auto;
+                    padding:10px 16px;
+                "
+            >
+                この端末の管理権限を解除
+            </button>
+
+        </div>
+
+    </section>
+
+
+
+    <!-- ================================= -->
+    <!-- 招待コード入力 -->
+    <!-- ================================= -->
+
+    <section
+        id="inviteSection"
+        class="card"
+        style="display:none;"
+    >
+
+        <div
+            style="
+                font-size:21px;
+                font-weight:bold;
+                margin-bottom:8px;
+            "
+        >
+            🎟 Moderator招待
+        </div>
+
+
+        <div
+            style="
+                color:#bbb;
+                line-height:1.7;
+                margin-bottom:16px;
+                font-size:14px;
+            "
+        >
+            配信者から受け取った招待コードを入力してください。
+            <br>
+            メールアドレスやパスワードは必要ありません。
+        </div>
+
+
+        <input
+            id="inviteCodeInput"
+            type="text"
+            maxlength="30"
+            autocomplete="off"
+            autocapitalize="characters"
+            placeholder="招待コード"
+            style="
+                width:100%;
+                padding:14px;
+                border:none;
+                border-radius:10px;
+                font-size:18px;
+                text-transform:uppercase;
+                margin-bottom:12px;
+            "
+        >
+
+
+        <button
+            id="claimInviteButton"
+            type="button"
+            class="action-button"
+        >
+            🏠 管理を開始する
+        </button>
+
+
+        <div
+            id="inviteMessage"
+            style="
+                min-height:22px;
+                margin-top:12px;
+                color:#ffcc66;
+                font-size:14px;
+                text-align:center;
+            "
+        >
+        </div>
+
+    </section>
+
+
+
+    <!-- ================================= -->
+    <!-- 認証・権限エラー -->
+    <!-- ================================= -->
+
+    <section
+        id="authError"
+        class="card"
+        style="display:none;"
+    >
+
+        <div
+            style="
+                font-size:20px;
+                font-weight:bold;
+                margin-bottom:12px;
+            "
+        >
+            🔒 管理画面を開けません
+        </div>
+
+
+        <div
+            id="authErrorMessage"
+            style="
+                line-height:1.7;
+            "
+        >
+            認証情報を確認しています。
+        </div>
+
+    </section>
+
+
+
+    <!-- ================================= -->
+    <!-- 管理画面本体 -->
+    <!-- ================================= -->
+
+    <main
+        id="adminContent"
+        style="display:none;"
+    >
+
+
+        <!-- ================================= -->
+        <!-- 部屋情報 -->
+        <!-- ================================= -->
+
+        <section class="card room-info-card">
+
+            <div
+                id="roomName"
+                class="room-name"
+            >
+                部屋情報を読み込み中…
+            </div>
+
+
+            <div class="room-meta">
+
+                <div>
+                    管理者：
+                    <span id="moderatorName">
+                        -
+                    </span>
+                </div>
+
+
+                <div>
+                    参加者：
+                    <span id="roomCount">
+                        0
+                    </span>
+                    /
+                    <span id="roomCapacity">
+                        9
+                    </span>
+                    人
+                </div>
+
+            </div>
+
+
+            <div
+                id="roomState"
+                class="room-state"
+            >
+                読み込み中…
+            </div>
+
+        </section>
+
+
+
+        <!-- ================================= -->
+        <!-- 現在のメンバー -->
+        <!-- ================================= -->
+
+        <section class="section">
+
+            <h2>
+                👥 現在のメンバー
+            </h2>
+
+
+            <div
+                id="roomMemberList"
+                class="list"
+            >
+
+                <div class="empty-card">
+                    読み込み中…
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- ================================= -->
+        <!-- メイン待機列 -->
+        <!-- ================================= -->
+
+        <section class="section">
+
+            <h2>
+                🟡 メイン待機列
+            </h2>
+
+
+            <div class="section-note">
+                待機順位はそのまま維持されます
+            </div>
+
+
+            <div
+                id="mainWaitingList"
+                class="list"
+            >
+
+                <div class="empty-card">
+                    読み込み中…
+                </div>
+
+            </div>
+
+        </section>
+
+
+
+        <!-- ================================= -->
+        <!-- 更新 -->
+        <!-- ================================= -->
+
+        <section class="bottom-area">
+
+            <button
+                id="refreshButton"
+                type="button"
+                class="secondary-button"
+            >
+                🔄 最新情報に更新
+            </button>
+
+        </section>
+
+
+    </main>
+
+
+</div>
+
+
+
+<!-- ================================= -->
+<!-- Supabase -->
+<!-- ================================= -->
+
+<script
+    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
+</script>
+
+
+
+<!-- ================================= -->
+<!-- 待機部屋管理 -->
+<!-- ================================= -->
+
+<script src="room-admin.js"></script>
+
+
+</body>
+
+</html>

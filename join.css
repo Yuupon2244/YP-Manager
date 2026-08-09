@@ -1,0 +1,133 @@
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+    font-family:"Yu Gothic UI",sans-serif;
+}
+
+body{
+    background:#1f1f1f;
+    color:white;
+
+    display:flex;
+    justify-content:center;
+    align-items:center;
+
+    min-height:100vh;
+
+    padding:20px;
+}
+
+.container{
+    width:420px;
+
+    max-width:100%;
+
+    background:#2b2b2b;
+
+    border-radius:18px;
+
+    padding:35px;
+
+    text-align:center;
+
+    box-shadow:
+        0 0 30px
+        rgba(0,0,0,.45);
+}
+
+h1{
+    margin-bottom:15px;
+
+    font-size:34px;
+}
+
+.sub{
+    color:#cfcfcf;
+
+    margin-bottom:30px;
+}
+
+input{
+    width:100%;
+
+    padding:15px;
+
+    border:none;
+
+    border-radius:10px;
+
+    font-size:18px;
+
+    margin-bottom:20px;
+}
+
+button{
+    width:100%;
+
+    padding:15px;
+
+    font-size:20px;
+
+    font-weight:bold;
+
+    border:none;
+
+    border-radius:10px;
+
+    cursor:pointer;
+
+    color:white;
+
+    transition:.2s;
+}
+
+#joinButton{
+    background:#3fb950;
+}
+
+#joinButton:hover{
+    background:#2ea043;
+}
+
+.cancel-button{
+    background:#d73a32;
+
+    margin-top:15px;
+}
+
+.cancel-button:hover{
+    background:#b92c25;
+}
+
+button:disabled{
+    opacity:.55;
+
+    cursor:not-allowed;
+}
+
+#message{
+    margin-top:25px;
+
+    font-size:18px;
+
+    line-height:1.7;
+
+    min-height:30px;
+}
+
+.success{
+    color:#5cff84;
+}
+
+.error{
+    color:#ff6b6b;
+}
+
+.info{
+    color:#f0d66b;
+}
+
+.hidden{
+    display:none;
+}

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>参加型配信 - 参加受付</title>
+
+    <link
+        rel="stylesheet"
+        href="join.css"
+    >
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>
+        🎮 参加型配信
+    </h1>
+
+    <p class="sub">
+        名前を入力して参加してください！
+    </p>
+
+    <input
+        id="nameInput"
+        type="text"
+        maxlength="30"
+        placeholder="名前を入力"
+        autocomplete="off"
+    >
+
+    <button
+        id="joinButton"
+        type="button"
+    >
+        参加する
+    </button>
+
+    <button
+        id="cancelButton"
+        type="button"
+        class="cancel-button hidden"
+    >
+        参加を辞退する
+    </button>
+
+    <div id="message"></div>
+
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="join.js"></script>
+
+</body>
+
+</html>

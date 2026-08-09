@@ -1,0 +1,340 @@
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    margin: 0;
+    padding: 0;
+    background: #1f1f1f;
+    color: #ffffff;
+    font-family:
+        "Yu Gothic UI",
+        "Meiryo",
+        sans-serif;
+}
+
+body {
+    min-height: 100vh;
+}
+
+button,
+input {
+    font: inherit;
+}
+
+button {
+    -webkit-tap-highlight-color: transparent;
+}
+
+
+/* ========================================
+   全体
+======================================== */
+
+.app {
+    width: 100%;
+    max-width: 620px;
+
+    margin: 0 auto;
+
+    padding:
+        16px
+        14px
+        36px;
+}
+
+
+/* ========================================
+   ヘッダー
+======================================== */
+
+.header {
+    margin-bottom: 16px;
+}
+
+.header-title {
+    font-size: 26px;
+    font-weight: bold;
+}
+
+.status-text {
+    margin-top: 6px;
+
+    font-size: 13px;
+
+    color: #aaaaaa;
+}
+
+
+/* ========================================
+   共通カード
+======================================== */
+
+.card,
+.person-card,
+.empty-card {
+    background: #303030;
+
+    border-radius: 14px;
+
+    padding: 16px;
+
+    box-shadow:
+        0 3px 10px
+        rgba(0, 0, 0, 0.24);
+}
+
+
+/* ========================================
+   部屋情報
+======================================== */
+
+.room-info-card {
+    margin-bottom: 24px;
+}
+
+.room-name {
+    font-size: 24px;
+
+    font-weight: bold;
+
+    margin-bottom: 12px;
+}
+
+.room-meta {
+    display: flex;
+
+    flex-wrap: wrap;
+
+    gap: 6px 18px;
+
+    font-size: 15px;
+
+    color: #dddddd;
+}
+
+.room-state {
+    margin-top: 12px;
+
+    padding: 9px 11px;
+
+    background: #252525;
+
+    border-radius: 9px;
+
+    font-size: 14px;
+
+    font-weight: bold;
+}
+
+
+/* ========================================
+   セクション
+======================================== */
+
+.section {
+    margin-top: 26px;
+}
+
+.section h2 {
+    margin:
+        0
+        0
+        10px;
+
+    font-size: 20px;
+}
+
+.section-note {
+    margin-bottom: 10px;
+
+    font-size: 13px;
+
+    color: #aaaaaa;
+}
+
+
+/* ========================================
+   リスト
+======================================== */
+
+.list {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 10px;
+}
+
+
+/* ========================================
+   参加者カード
+======================================== */
+
+.person-card {
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 12px;
+}
+
+.person-name {
+    font-size: 19px;
+
+    font-weight: bold;
+
+    word-break: break-word;
+}
+
+.person-meta {
+    font-size: 13px;
+
+    color: #bbbbbb;
+
+    line-height: 1.6;
+}
+
+
+/* ========================================
+   バッジ
+======================================== */
+
+.badge {
+    display: inline-block;
+
+    width: fit-content;
+
+    padding:
+        4px
+        9px;
+
+    border-radius: 999px;
+
+    font-size: 12px;
+
+    font-weight: bold;
+}
+
+.badge-initial {
+    background: #2f9e63;
+}
+
+.badge-rejoin {
+    background: #7b5bd6;
+}
+
+.badge-room {
+    background: #367ea3;
+}
+
+
+/* ========================================
+   ボタン
+======================================== */
+
+.action-button,
+.secondary-button {
+    width: 100%;
+
+    min-height: 48px;
+
+    border: none;
+
+    border-radius: 11px;
+
+    padding:
+        12px
+        14px;
+
+    font-weight: bold;
+
+    cursor: pointer;
+}
+
+.action-button {
+    background: #39b54a;
+
+    color: white;
+}
+
+.action-button:active {
+    transform: scale(0.99);
+}
+
+.return-button {
+    background: #555555;
+}
+
+.danger-button {
+    background: #b33d3d;
+}
+
+.secondary-button {
+    background: #444444;
+
+    color: white;
+}
+
+
+/* ========================================
+   空表示
+======================================== */
+
+.empty-card {
+    color: #bbbbbb;
+
+    text-align: center;
+
+    font-size: 14px;
+}
+
+
+/* ========================================
+   下部
+======================================== */
+
+.bottom-area {
+    margin-top: 28px;
+}
+
+
+/* ========================================
+   スマホ
+======================================== */
+
+@media (
+    max-width: 480px
+) {
+
+    .app {
+        padding:
+            13px
+            11px
+            32px;
+    }
+
+    .header-title {
+        font-size: 23px;
+    }
+
+    .room-name {
+        font-size: 21px;
+    }
+
+    .section h2 {
+        font-size: 18px;
+    }
+
+    .person-name {
+        font-size: 18px;
+    }
+
+    .action-button,
+    .secondary-button {
+        min-height: 52px;
+
+        font-size: 16px;
+    }
+}
