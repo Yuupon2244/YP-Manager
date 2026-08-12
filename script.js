@@ -78,6 +78,295 @@ let currentSessionId = null;
 let rejoinEnabled = false;
 
 
+
+// ========================================
+// URL参加通知
+// ========================================
+
+const urlJoinNotification =
+    document.getElementById(
+        "urlJoinNotification"
+    );
+
+
+// 好きなSEを使う場合は、音声ファイルを同じフォルダへ置き、
+// 例："notification.mp3" のようにファイル名を指定する。
+// 空欄の場合は、追加ファイル不要の標準ピコン音を使用する。
+const URL_JOIN_SOUND_FILE = "";
+
+let urlNotificationInitialized = false;
+let knownUrlParticipantIds = new Set();
+let notificationHideTimer = null;
+let notificationAudioContext = null;
+
+
+function unlockNotificationAudio() {
+
+    try {
+
+        if (!notificationAudioContext) {
+
+            const AudioContextClass =
+                window.AudioContext ||
+                window.webkitAudioContext;
+
+
+            if (AudioContextClass) {
+
+                notificationAudioContext =
+                    new AudioContextClass();
+            }
+        }
+
+
+        if (
+            notificationAudioContext?.state ===
+            "suspended"
+        ) {
+
+            notificationAudioContext.resume();
+        }
+
+    } catch (error) {
+
+        console.warn(
+            "通知音の準備に失敗:",
+            error
+        );
+    }
+}
+
+
+window.addEventListener(
+    "pointerdown",
+    unlockNotificationAudio,
+    {
+        once:true
+    }
+);
+
+
+function playDefaultNotificationSound() {
+
+    unlockNotificationAudio();
+
+
+    if (!notificationAudioContext) {
+
+        return;
+    }
+
+
+    const now =
+        notificationAudioContext.currentTime;
+
+    const gain =
+        notificationAudioContext.createGain();
+
+
+    gain.gain.setValueAtTime(
+        0.0001,
+        now
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+        0.22,
+        now + 0.02
+    );
+
+    gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        now + 0.55
+    );
+
+    gain.connect(
+        notificationAudioContext.destination
+    );
+
+
+    [
+        {
+            frequency:880,
+            start:0,
+            duration:0.18
+        },
+        {
+            frequency:1320,
+            start:0.16,
+            duration:0.32
+        }
+    ].forEach(
+        tone => {
+
+            const oscillator =
+                notificationAudioContext.createOscillator();
+
+
+            oscillator.type =
+                "sine";
+
+            oscillator.frequency.setValueAtTime(
+                tone.frequency,
+                now + tone.start
+            );
+
+            oscillator.connect(
+                gain
+            );
+
+            oscillator.start(
+                now + tone.start
+            );
+
+            oscillator.stop(
+                now + tone.start + tone.duration
+            );
+        }
+    );
+}
+
+
+async function playUrlJoinSound() {
+
+    if (!URL_JOIN_SOUND_FILE) {
+
+        playDefaultNotificationSound();
+
+        return;
+    }
+
+
+    try {
+
+        const audio =
+            new Audio(
+                URL_JOIN_SOUND_FILE
+            );
+
+
+        audio.volume =
+            0.8;
+
+
+        await audio.play();
+
+    } catch (error) {
+
+        console.warn(
+            "指定SEを再生できないため標準音を使用:",
+            error
+        );
+
+        playDefaultNotificationSound();
+    }
+}
+
+
+function showUrlJoinNotification(
+    name
+) {
+
+    if (!urlJoinNotification) {
+
+        return;
+    }
+
+
+    urlJoinNotification.textContent =
+        `🔔 URL参加：${name}`;
+
+    urlJoinNotification.classList.add(
+        "show"
+    );
+
+
+    clearTimeout(
+        notificationHideTimer
+    );
+
+
+    notificationHideTimer =
+        setTimeout(
+            () => {
+
+                urlJoinNotification.classList.remove(
+                    "show"
+                );
+            },
+            5000
+        );
+}
+
+
+function detectNewUrlParticipants(
+    nextParticipants
+) {
+
+    const currentUrlParticipants =
+        nextParticipants.filter(
+            person =>
+                person.source === "url" &&
+                person.status === "waiting"
+        );
+
+
+    const currentIds =
+        new Set(
+            currentUrlParticipants.map(
+                person =>
+                    person.id
+            )
+        );
+
+
+    if (!urlNotificationInitialized) {
+
+        knownUrlParticipantIds =
+            currentIds;
+
+        urlNotificationInitialized =
+            true;
+
+        return;
+    }
+
+
+    const newParticipants =
+        currentUrlParticipants.filter(
+            person =>
+                !knownUrlParticipantIds.has(
+                    person.id
+                )
+        );
+
+
+    knownUrlParticipantIds =
+        currentIds;
+
+
+    newParticipants.forEach(
+        person => {
+
+            playUrlJoinSound();
+
+            showUrlJoinNotification(
+                person.name ||
+                "名前不明"
+            );
+        }
+    );
+}
+
+
+function resetUrlParticipantNotification() {
+
+    urlNotificationInitialized =
+        false;
+
+    knownUrlParticipantIds.clear();
+}
+
+
 // ========================================
 // 待機順の基準値
 // ========================================
@@ -457,12 +746,21 @@ async function loadParticipants() {
         return;
     }
 
-
-    participants =
+    const nextParticipants =
         data || [];
 
 
+    detectNewUrlParticipants(
+        nextParticipants
+    );
+
+
+    participants =
+        nextParticipants;
+
+
     render();
+
 }
 
 
@@ -1912,6 +2210,8 @@ setInterval(
             currentSessionId !==
             previousSession
         ) {
+
+            resetUrlParticipantNotification();
 
             console.log(
                 "配信IDが変更されました:",
