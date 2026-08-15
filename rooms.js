@@ -623,9 +623,10 @@ function renderRooms() {
 
 
             adminUrlButton.onclick =
-                () =>
-                    openRoomAdminUrl(
-                        room
+                async () =>
+                    copyRoomAdminUrl(
+                        room,
+                        adminUrlButton
                     );
 
 
@@ -1565,8 +1566,9 @@ function createRoomAdminUrl(
 }
 
 
-function openRoomAdminUrl(
-    room
+async function copyRoomAdminUrl(
+    room,
+    button
 ) {
 
     const adminUrl =
@@ -1585,22 +1587,71 @@ function openRoomAdminUrl(
     }
 
 
-    const confirmed =
-        confirm(
-            `${room.name}の管理画面を開きます。\n\n` +
-            `この部屋専用の管理URLです。\n\n` +
-            `開きますか？`
-        );
+    const originalText =
+        button?.textContent ||
+        "🔗 管理URL";
 
 
-    if (!confirmed) {
-        return;
+    if (button) {
+
+        button.disabled =
+            true;
     }
 
 
-    window.open(
-        adminUrl.href,
-        "_blank"
+    let success =
+        false;
+
+
+    if (
+        typeof copyText ===
+        "function"
+    ) {
+
+        success =
+            await copyText(
+                adminUrl.href
+            );
+    }
+
+
+    if (success) {
+
+        if (button) {
+
+            button.textContent =
+                "✅ URLコピー済み";
+        }
+
+    } else {
+
+        prompt(
+            "この管理URLをコピーしてください。",
+            adminUrl.href
+        );
+
+
+        if (button) {
+
+            button.textContent =
+                "⚠️ 手動でコピー";
+        }
+    }
+
+
+    setTimeout(
+        () => {
+
+            if (button) {
+
+                button.disabled =
+                    false;
+
+                button.textContent =
+                    originalText;
+            }
+        },
+        1800
     );
 }
 

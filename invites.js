@@ -12,6 +12,10 @@ let inviteDecorationScheduled =
     false;
 
 
+const creatingInviteRoomIds =
+    new Set();
+
+
 // ========================================
 // 招待コード発行
 // ========================================
@@ -28,6 +32,17 @@ async function createModeratorInvite(
         alert(
             "待機部屋情報を取得できませんでした。"
         );
+
+        return;
+    }
+
+
+    // 連打による二重発行を防止
+    if (
+        creatingInviteRoomIds.has(
+            room.id
+        )
+    ) {
 
         return;
     }
@@ -53,23 +68,12 @@ async function createModeratorInvite(
     }
 
 
-    const confirmed =
-        confirm(
-            `${room.name} の\n` +
-            `Moderator招待コードを発行しますか？\n\n` +
-            `・有効期限は24時間\n` +
-            `・1回使用すると無効\n` +
-            `・新しく発行すると以前の未使用コードは無効になります`
+    try {
+
+        creatingInviteRoomIds.add(
+            room.id
         );
 
-
-    if (!confirmed) {
-
-        return;
-    }
-
-
-    try {
 
         const {
             data,
@@ -105,9 +109,17 @@ async function createModeratorInvite(
             );
 
 
+        // 発行後、そのまま自動コピー
+        const copied =
+            await copyText(
+                inviteCode
+            );
+
+
         showInviteDialog(
             room,
-            inviteCode
+            inviteCode,
+            copied
         );
 
     } catch (error) {
@@ -122,9 +134,14 @@ async function createModeratorInvite(
             error.message ||
             "招待コードを発行できませんでした。"
         );
+
+    } finally {
+
+        creatingInviteRoomIds.delete(
+            room.id
+        );
     }
 }
-
 
 // ========================================
 // 招待コード表示
@@ -132,9 +149,9 @@ async function createModeratorInvite(
 
 function showInviteDialog(
     room,
-    inviteCode
+    inviteCode,
+    alreadyCopied = false
 ) {
-
     // 既存モーダル削除
     const oldModal =
         document.getElementById(
@@ -340,7 +357,9 @@ function showInviteDialog(
 
 
     copyButton.textContent =
-        "📋 招待コードをコピー";
+        alreadyCopied
+            ? "✅ 招待コードをコピーしました"
+            : "📋 招待コードをコピー";
 
 
     copyButton.style.width =
