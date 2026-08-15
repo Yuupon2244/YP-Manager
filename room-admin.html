@@ -17,6 +17,11 @@
         href="room-admin.css"
     >
 
+    <link
+        rel="stylesheet"
+        href="shared-chat.css"
+    >
+
 </head>
 
 
@@ -271,6 +276,68 @@
 
         </section>
 
+<!-- ================================= -->
+<!-- URL参加者 全体共有チャット -->
+<!-- ================================= -->
+
+<section
+    id="sharedChatViewer"
+    class="section shared-chat-panel shared-chat-viewer"
+>
+
+    <div class="shared-chat-title">
+        💬 URL参加者 全体共有チャット
+    </div>
+
+    <div
+        id="sharedChatStatus"
+        class="shared-chat-note"
+    >
+        チャットを確認中…
+    </div>
+
+    <div
+        id="sharedChatList"
+        class="shared-chat-list"
+    ></div>
+
+    <div
+        id="moderatorChatCompose"
+        class="shared-chat-compose"
+    >
+
+        <textarea
+            id="moderatorChatInput"
+            maxlength="100"
+            rows="2"
+            placeholder="Moderatorとして送信（100文字まで）"
+        ></textarea>
+
+        <div class="shared-chat-compose-bottom">
+
+            <span id="moderatorChatCount">
+                0 / 100
+            </span>
+
+            <button
+                id="moderatorChatSendButton"
+                type="button"
+                class="shared-chat-send-button"
+            >
+                送信
+            </button>
+
+        </div>
+
+        <div
+            id="moderatorChatMessage"
+            class="shared-chat-feedback"
+        ></div>
+
+    </div>
+
+</section>
+
 
 
         <!-- ================================= -->
@@ -369,6 +436,9 @@
 <!-- ================================= -->
 
 <script src="room-admin.js"></script>
+
+<!-- URL参加者チャット閲覧・Moderator送信 -->
+<script src="chat-viewer.js"></script>
 
 
 </body>

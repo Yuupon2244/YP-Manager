@@ -470,6 +470,25 @@ async function authorizeExistingSession() {
         !canManageCurrentRoom()
     ) {
 
+        // 別部屋のModerator権限が残っている場合は
+        // エラーで止めず、招待コード入力画面を表示
+        if (
+            currentProfile.role ===
+            "moderator"
+        ) {
+
+            showInvitePanel();
+
+
+            setInviteMessage(
+                "この待機部屋の招待コードを入力してください。"
+            );
+
+
+            return false;
+        }
+
+
         connectionStatus.textContent =
             "🔒 権限なし";
 
@@ -654,13 +673,34 @@ async function claimInvite() {
     );
 
 
-    try {
+try {
 
-        // =====================================
-        // 匿名Authユーザーを確保
-        // =====================================
+    // =====================================
+    // 別部屋のModeratorセッションを切替
+    // =====================================
 
-        await ensureAnonymousSession();
+    if (
+        currentUser &&
+        currentProfile?.role === "moderator" &&
+        currentRoom &&
+        currentRoom.moderator_user_id !== currentUser.id
+    ) {
+
+        await roomAdminSupabase
+            .auth
+            .signOut({
+                scope: "local"
+            });
+
+        currentUser = null;
+        currentProfile = null;
+    }
+
+    // =====================================
+    // 匿名Authユーザーを確保
+    // =====================================
+
+    await ensureAnonymousSession();
 
 
         // =====================================

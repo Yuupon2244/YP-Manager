@@ -15,6 +15,11 @@
         rel="stylesheet"
         href="join.css"
     >
+
+    <link
+        rel="stylesheet"
+        href="shared-chat.css"
+    >
 </head>
 
 <body>
@@ -54,11 +59,70 @@
 
     <div id="message"></div>
 
+
+    <!-- URL参加者 全体共有チャット -->
+
+    <section
+        id="participantChatSection"
+        class="shared-chat-panel hidden"
+    >
+
+        <div class="shared-chat-title">
+            💬 URL参加者 全体共有チャット
+        </div>
+
+        <div
+            id="participantChatStatus"
+            class="shared-chat-note"
+        >
+            チャットを確認中…
+        </div>
+
+        <div
+            id="participantChatList"
+            class="shared-chat-list"
+        ></div>
+
+        <div class="shared-chat-compose">
+
+            <textarea
+                id="participantChatInput"
+                maxlength="100"
+                rows="2"
+                placeholder="メッセージを入力（100文字まで）"
+            ></textarea>
+
+            <div class="shared-chat-compose-bottom">
+
+                <span id="participantChatCount">
+                    0 / 100
+                </span>
+
+                <button
+                    id="participantChatSendButton"
+                    type="button"
+                    class="shared-chat-send-button"
+                >
+                    送信
+                </button>
+
+            </div>
+
+        </div>
+
+        <div
+            id="participantChatMessage"
+            class="shared-chat-feedback"
+        ></div>
+
+    </section>
+
 </div>
 
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="join.js"></script>
+<script src="participant-chat.js"></script>
 
 </body>
 

@@ -1,0 +1,216 @@
+/* ========================================
+   YP-Manager 全体共有チャット
+======================================== */
+
+.shared-chat-panel {
+    margin-top: 26px;
+    padding: 16px;
+    background: #303030;
+    border-radius: 14px;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+    text-align: left;
+}
+
+.shared-chat-title {
+    margin-bottom: 6px;
+    color: #ffffff;
+    font-size: 19px;
+    font-weight: bold;
+}
+
+.shared-chat-note {
+    min-height: 20px;
+    margin-bottom: 10px;
+    color: #aaaaaa;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.shared-chat-list {
+    height: 300px;
+    overflow-y: auto;
+    padding: 10px;
+    background: #202020;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+}
+
+.shared-chat-empty {
+    padding: 24px 8px;
+    color: #999999;
+    font-size: 14px;
+    text-align: center;
+}
+
+.shared-chat-item {
+    padding: 9px 10px;
+    background: #383838;
+    border-radius: 9px;
+}
+
+.shared-chat-item + .shared-chat-item {
+    margin-top: 8px;
+}
+
+.shared-chat-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+}
+
+.shared-chat-name {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: #72d6ff;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.shared-chat-time {
+    flex-shrink: 0;
+    color: #999999;
+    font-size: 11px;
+}
+
+.shared-chat-text {
+    color: #ffffff;
+    font-size: 15px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.shared-chat-compose {
+    margin-top: 10px;
+}
+
+.shared-chat-compose textarea {
+    display: block;
+    width: 100%;
+    min-height: 72px;
+    margin: 0;
+    padding: 11px 12px;
+    resize: vertical;
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    border-radius: 9px;
+    outline: none;
+    background: #242424;
+    color: #ffffff;
+    font: inherit;
+    font-size: 16px;
+}
+
+.shared-chat-compose textarea:focus {
+    border-color: #55bde8;
+}
+
+.shared-chat-compose textarea:disabled {
+    opacity: 0.55;
+}
+
+.shared-chat-compose-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+#participantChatCount {
+    color: #aaaaaa;
+    font-size: 12px;
+}
+
+.shared-chat-send-button {
+    width: auto;
+    min-width: 100px;
+    margin: 0;
+    padding: 10px 18px;
+    border: none;
+    border-radius: 9px;
+    background: #397fc3;
+    color: #ffffff;
+    font-size: 15px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.shared-chat-send-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.shared-chat-feedback {
+    min-height: 20px;
+    margin-top: 8px;
+    color: #ffcc66;
+    font-size: 13px;
+    text-align: center;
+}
+
+.shared-chat-feedback.error {
+    color: #ff7777;
+}
+
+.shared-chat-viewer {
+    text-align: left;
+}
+
+.hidden {
+    display: none !important;
+}
+
+body.participant-chat-active {
+    align-items: flex-start;
+}
+
+body.participant-chat-active .container {
+    width: 560px;
+}
+
+body.participant-chat-active .sub,
+body.participant-chat-active #nameInput,
+body.participant-chat-active #joinButton {
+    display: none;
+}
+
+@media (max-width: 480px) {
+    .shared-chat-panel {
+        padding: 13px;
+    }
+
+    .shared-chat-title {
+        font-size: 17px;
+    }
+
+    .shared-chat-list {
+        height: 280px;
+    }
+
+    .shared-chat-send-button {
+        min-width: 88px;
+        padding: 10px 14px;
+    }
+}
+
+
+
+/* ========================================
+   Moderator発言
+======================================== */
+
+.shared-chat-item-moderator {
+    background: #303657;
+    border: 1px solid #6f7de0;
+}
+
+.shared-chat-item-moderator .shared-chat-name {
+    color: #ffd76a;
+}
+
+#moderatorChatCount {
+    color: #aaaaaa;
+    font-size: 12px;
+}
