@@ -937,10 +937,26 @@ function createPersonBox(
             : "";
 
 
-    dateBox.textContent =
-        `${formatDate(
-            person.joined_at
-        )}${sourceText}`;
+dateBox.textContent =
+    `${formatDate(
+        person.joined_at
+    )}${sourceText}`;
+
+
+const gameNameBox =
+    document.createElement(
+        "div"
+    );
+
+
+gameNameBox.className =
+    "date";
+
+
+gameNameBox.textContent =
+    person.game_name
+        ? `🎮 スプラ名：${person.game_name}`
+        : "🎮 スプラ名：未登録";
 
 
     const buttonsBox =
@@ -957,19 +973,38 @@ function createPersonBox(
         nameBox
     );
 
-    personBox.appendChild(
-        dateBox
-    );
+personBox.appendChild(
+    dateBox
+);
 
-    personBox.appendChild(
-        buttonsBox
-    );
+personBox.appendChild(
+    gameNameBox
+);
+
+personBox.appendChild(
+    buttonsBox
+);
 
 
-    return {
-        personBox,
-        buttonsBox
-    };
+buttonsBox.appendChild(
+    createButton(
+        person.game_name
+            ? "🎮 スプラ名を変更"
+            : "🎮 スプラ名を登録",
+        "move",
+        () =>
+            updateGameName(
+                person
+            )
+    )
+);
+
+
+return {
+    personBox,
+    buttonsBox
+};
+
 }
 
 
@@ -1033,6 +1068,82 @@ function isInitialPerson(person) {
     return !isRejoinPerson(
         person
     );
+}
+
+
+
+// ========================================
+// スプラ名を登録・変更
+// ========================================
+
+async function updateGameName(
+    person
+) {
+
+    const input =
+        window.prompt(
+            `${person.name}さんのスプラ名を入力してください。\n空欄で保存すると登録を解除します。`,
+            person.game_name || ""
+        );
+
+
+    if (input === null) {
+
+        return;
+    }
+
+
+    const gameName =
+        input.trim();
+
+
+    if (gameName.length > 30) {
+
+        alert(
+            "スプラ名は30文字以内で入力してください。"
+        );
+
+        return;
+    }
+
+
+    const {
+        error
+    } =
+        await supabaseClient
+            .from(
+                "participants"
+            )
+            .update({
+                game_name:
+                    gameName || null
+            })
+            .eq(
+                "id",
+                person.id
+            )
+            .eq(
+                "session_id",
+                currentSessionId
+            );
+
+
+    if (error) {
+
+        console.error(
+            "スプラ名保存エラー:",
+            error
+        );
+
+        alert(
+            "スプラ名を保存できませんでした。"
+        );
+
+        return;
+    }
+
+
+    await loadParticipants();
 }
 
 

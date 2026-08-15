@@ -1230,11 +1230,27 @@ function renderMembers(
                 "person-meta";
 
 
-            meta.innerHTML =
-                `メイン待機：
-                <strong>
-                    ${getWaitingPosition(person)}番
-                </strong>`;
+meta.innerHTML =
+    `メイン待機：
+    <strong>
+        ${getWaitingPosition(person)}番
+    </strong>`;
+
+
+const gameName =
+    document.createElement(
+        "div"
+    );
+
+
+gameName.className =
+    "person-meta";
+
+
+gameName.textContent =
+    person.game_name
+        ? `🎮 スプラ名：${person.game_name}`
+        : "🎮 スプラ名：未登録";
 
 
             const returnButton =
@@ -1272,6 +1288,10 @@ function renderMembers(
 
             card.appendChild(
                 meta
+            );
+
+            card.appendChild(
+                gameName
             );
 
             card.appendChild(
@@ -1375,12 +1395,28 @@ function renderWaiting(
                 "person-meta";
 
 
-            meta.innerHTML =
-                `現在
-                <strong>
-                    ${getWaitingPosition(person)}番
-                </strong>
-                ／ メイン待機`;
+meta.innerHTML =
+    `現在
+    <strong>
+        ${getWaitingPosition(person)}番
+    </strong>
+    ／ メイン待機`;
+
+
+const gameName =
+    document.createElement(
+        "div"
+    );
+
+
+gameName.className =
+    "person-meta";
+
+
+gameName.textContent =
+    person.game_name
+        ? `🎮 スプラ名：${person.game_name}`
+        : "🎮 スプラ名：未登録";
 
 
             const addButton =
@@ -1432,6 +1468,10 @@ function renderWaiting(
 
             card.appendChild(
                 meta
+            );
+
+            card.appendChild(
+                gameName
             );
 
             card.appendChild(
