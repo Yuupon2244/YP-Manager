@@ -56,6 +56,13 @@ const playingList =
         "playingList"
     );
 
+
+const finishAllPlayingButton =
+    document.getElementById(
+        "finishAllPlayingButton"
+    );
+
+
 const finishedList =
     document.getElementById(
         "finishedList"
@@ -76,7 +83,6 @@ let participants = [];
 let currentSessionId = null;
 
 let rejoinEnabled = false;
-
 
 
 // ========================================
@@ -141,7 +147,7 @@ window.addEventListener(
     "pointerdown",
     unlockNotificationAudio,
     {
-        once:true
+        once: true
     }
 );
 
@@ -186,14 +192,14 @@ function playDefaultNotificationSound() {
 
     [
         {
-            frequency:880,
-            start:0,
-            duration:0.18
+            frequency: 880,
+            start: 0,
+            duration: 0.18
         },
         {
-            frequency:1320,
-            start:0.16,
-            duration:0.32
+            frequency: 1320,
+            start: 0.16,
+            duration: 0.32
         }
     ].forEach(
         tone => {
@@ -382,6 +388,7 @@ const REJOIN_ORDER_BASE = 1000000;
 function formatDate(dateValue) {
 
     if (!dateValue) {
+
         return "";
     }
 
@@ -432,7 +439,7 @@ async function loadRejoinSetting() {
     if (!data) {
 
         const {
-            error:insertError
+            error: insertError
         } =
             await supabaseClient
                 .from(
@@ -724,14 +731,14 @@ async function loadParticipants() {
             .order(
                 "display_order",
                 {
-                    ascending:true,
-                    nullsFirst:false
+                    ascending: true,
+                    nullsFirst: false
                 }
             )
             .order(
                 "joined_at",
                 {
-                    ascending:true
+                    ascending: true
                 }
             );
 
@@ -745,6 +752,7 @@ async function loadParticipants() {
 
         return;
     }
+
 
     const nextParticipants =
         data || [];
@@ -760,7 +768,6 @@ async function loadParticipants() {
 
 
     render();
-
 }
 
 
@@ -937,26 +944,26 @@ function createPersonBox(
             : "";
 
 
-dateBox.textContent =
-    `${formatDate(
-        person.joined_at
-    )}${sourceText}`;
+    dateBox.textContent =
+        `${formatDate(
+            person.joined_at
+        )}${sourceText}`;
 
 
-const gameNameBox =
-    document.createElement(
-        "div"
-    );
+    const gameNameBox =
+        document.createElement(
+            "div"
+        );
 
 
-gameNameBox.className =
-    "date";
+    gameNameBox.className =
+        "date";
 
 
-gameNameBox.textContent =
-    person.game_name
-        ? `🎮 スプラ名：${person.game_name}`
-        : "🎮 スプラ名：未登録";
+    gameNameBox.textContent =
+        person.game_name
+            ? `🎮 スプラ名：${person.game_name}`
+            : "🎮 スプラ名：未登録";
 
 
     const buttonsBox =
@@ -973,38 +980,37 @@ gameNameBox.textContent =
         nameBox
     );
 
-personBox.appendChild(
-    dateBox
-);
+    personBox.appendChild(
+        dateBox
+    );
 
-personBox.appendChild(
-    gameNameBox
-);
+    personBox.appendChild(
+        gameNameBox
+    );
 
-personBox.appendChild(
-    buttonsBox
-);
-
-
-buttonsBox.appendChild(
-    createButton(
-        person.game_name
-            ? "🎮 スプラ名を変更"
-            : "🎮 スプラ名を登録",
-        "move",
-        () =>
-            updateGameName(
-                person
-            )
-    )
-);
+    personBox.appendChild(
+        buttonsBox
+    );
 
 
-return {
-    personBox,
-    buttonsBox
-};
+    buttonsBox.appendChild(
+        createButton(
+            person.game_name
+                ? "🎮 スプラ名を変更"
+                : "🎮 スプラ名を登録",
+            "move",
+            () =>
+                updateGameName(
+                    person
+                )
+        )
+    );
 
+
+    return {
+        personBox,
+        buttonsBox
+    };
 }
 
 
@@ -1069,7 +1075,6 @@ function isInitialPerson(person) {
         person
     );
 }
-
 
 
 // ========================================
@@ -1199,8 +1204,7 @@ function getNextOrderForGroup(
 
 
         if (
-            rejoinOrders.length ===
-            0
+            rejoinOrders.length === 0
         ) {
 
             return REJOIN_ORDER_BASE;
@@ -1224,8 +1228,7 @@ function getNextOrderForGroup(
 
 
     if (
-        initialOrders.length ===
-        0
+        initialOrders.length === 0
     ) {
 
         return INITIAL_ORDER_BASE;
@@ -1289,7 +1292,6 @@ function render() {
                 person.status ===
                 "cancelled"
         );
-
 
     // =====================================
     // 待機中
@@ -1751,8 +1753,8 @@ async function finishTwoGames(
 
 
     const {
-        data:finishedData,
-        error:finishError
+        data: finishedData,
+        error: finishError
     } =
         await supabaseClient
             .from(
@@ -1792,8 +1794,7 @@ async function finishTwoGames(
 
     if (
         !finishedData ||
-        finishedData.length ===
-        0
+        finishedData.length === 0
     ) {
 
         await loadParticipants();
@@ -1803,7 +1804,7 @@ async function finishTwoGames(
 
 
     const {
-        error:insertError
+        error: insertError
     } =
         await supabaseClient
             .from(
@@ -1823,6 +1824,10 @@ async function finishTwoGames(
 
                     user_id:
                         person.user_id,
+
+                    game_name:
+                        person.game_name ||
+                        null,
 
                     display_order:
                         nextOrder,
@@ -2014,6 +2019,7 @@ async function restorePerson(
 ) {
 
     if (!currentSessionId) {
+
         return;
     }
 
@@ -2021,8 +2027,7 @@ async function restorePerson(
     const person =
         participants.find(
             item =>
-                item.id ===
-                id
+                item.id === id
         );
 
 
@@ -2182,6 +2187,7 @@ async function moveWaiting(
 
 
     if (index === -1) {
+
         return;
     }
 
@@ -2193,8 +2199,7 @@ async function moveWaiting(
 
     if (
         targetIndex < 0 ||
-        targetIndex >=
-            waiting.length
+        targetIndex >= waiting.length
     ) {
 
         return;
@@ -2220,7 +2225,7 @@ async function moveWaiting(
 
 
     const {
-        error:firstError
+        error: firstError
     } =
         await supabaseClient
             .from(
@@ -2248,7 +2253,7 @@ async function moveWaiting(
 
 
     const {
-        error:secondError
+        error: secondError
     } =
         await supabaseClient
             .from(
@@ -2292,12 +2297,14 @@ async function initialize() {
     const loaded =
         await loadCurrentSession();
 
+
     if (!loaded) {
 
         render();
 
         return;
     }
+
 
     await loadParticipants();
 }
@@ -2343,3 +2350,219 @@ setInterval(
 // ========================================
 
 initialize();
+
+
+// ========================================
+// 参加中の全員を2試合終了
+// ========================================
+
+async function finishAllPlaying() {
+
+    if (
+        !currentSessionId ||
+        !finishAllPlayingButton
+    ) {
+
+        return;
+    }
+
+
+    const playingMembers =
+        participants.filter(
+            person =>
+                person.status ===
+                "playing"
+        );
+
+
+    if (playingMembers.length === 0) {
+
+        alert(
+            "現在参加中のメンバーはいません。"
+        );
+
+        return;
+    }
+
+
+    const confirmed =
+        confirm(
+            `現在参加中の${playingMembers.length}人を、全員2試合終了として再参加待機の最後尾へ移動しますか？`
+        );
+
+
+    if (!confirmed) {
+
+        return;
+    }
+
+
+    finishAllPlayingButton.disabled =
+        true;
+
+    finishAllPlayingButton.textContent =
+        "処理中…";
+
+
+    let nextOrder =
+        getNextOrderForGroup(
+            true
+        );
+
+
+    let successCount =
+        0;
+
+    const failedNames =
+        [];
+
+
+    for (
+        const person of
+        playingMembers
+    ) {
+
+        try {
+
+            const {
+                data: finishedData,
+                error: finishError
+            } =
+                await supabaseClient
+                    .from(
+                        "participants"
+                    )
+                    .update({
+                        status:
+                            "finished"
+                    })
+                    .eq(
+                        "id",
+                        person.id
+                    )
+                    .eq(
+                        "status",
+                        "playing"
+                    )
+                    .eq(
+                        "session_id",
+                        currentSessionId
+                    )
+                    .select(
+                        "id"
+                    );
+
+
+            if (finishError) {
+
+                throw finishError;
+            }
+
+
+            if (
+                !finishedData ||
+                finishedData.length === 0
+            ) {
+
+                throw new Error(
+                    "参加状態を更新できませんでした。"
+                );
+            }
+
+
+            const {
+                error: insertError
+            } =
+                await supabaseClient
+                    .from(
+                        "participants"
+                    )
+                    .insert([
+                        {
+                            name:
+                                person.name,
+
+                            status:
+                                "waiting",
+
+                            source:
+                                person.source ||
+                                "admin",
+
+                            user_id:
+                                person.user_id,
+
+                            game_name:
+                                person.game_name ||
+                                null,
+
+                            display_order:
+                                nextOrder,
+
+                            note:
+                                "rejoin",
+
+                            session_id:
+                                currentSessionId
+                        }
+                    ]);
+
+
+            if (insertError) {
+
+                throw insertError;
+            }
+
+
+            nextOrder += 1;
+            successCount += 1;
+
+        } catch (error) {
+
+            console.error(
+                "全員2試合終了エラー:",
+                person.name,
+                error
+            );
+
+
+            failedNames.push(
+                person.name
+            );
+        }
+    }
+
+
+    await loadParticipants();
+
+
+    finishAllPlayingButton.disabled =
+        false;
+
+    finishAllPlayingButton.textContent =
+        "🔁 参加中の全員を2試合終了";
+
+
+    if (failedNames.length === 0) {
+
+        alert(
+            `${successCount}人を再参加待機の最後尾へ移動しました。`
+        );
+
+        return;
+    }
+
+
+    alert(
+        `${successCount}人の移動が完了しました。\n\n処理できなかった参加者：\n${failedNames.join("、")}`
+    );
+}
+
+
+if (finishAllPlayingButton) {
+
+    finishAllPlayingButton.addEventListener(
+        "click",
+        finishAllPlaying
+    );
+}
