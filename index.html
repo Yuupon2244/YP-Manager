@@ -10,7 +10,7 @@
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>YP-Manager v1.1</title>
+    <title>YP-Manager v1.1.0</title>
 
     <link
         rel="stylesheet"
@@ -51,7 +51,7 @@
 
 
     <p class="subtitle">
-        参加型待機列管理 v1.1
+        参加型待機列管理 v1.1.0
     </p>
 
 
@@ -121,7 +121,6 @@
         "
     >
 
-
         <h2>
             🏠 部屋管理
         </h2>
@@ -135,7 +134,6 @@
                 margin-bottom: 14px;
             "
         >
-
 
             <div
                 style="
@@ -155,7 +153,6 @@
                     flex-wrap: wrap;
                 "
             >
-
 
                 <input
                     id="roomNameInput"
@@ -208,19 +205,14 @@
                     ＋ 待機部屋を作成
                 </button>
 
-
             </div>
 
         </div>
 
 
-
         <!-- 部屋一覧 -->
 
-        <div
-            id="roomList"
-        >
-
+        <div id="roomList">
 
             <div
                 class="person"
@@ -229,9 +221,7 @@
                 部屋情報を読み込み中…
             </div>
 
-
         </div>
-
 
     </section>
 
@@ -287,41 +277,36 @@
 
     <section>
 
-<h2>
-    🟢 参加中
-</h2>
+        <h2>
+            🟢 参加中
+        </h2>
 
 
-<div class="buttons">
+        <div class="buttons">
 
-    <button
-        id="finishAllPlayingButton"
-        type="button"
-        class="finish"
-    >
-        🔁 参加中の全員を2試合終了
-    </button>
+            <button
+                id="finishAllPlayingButton"
+                type="button"
+                class="finish"
+            >
+                🔁 参加中の全員を2試合終了
+            </button>
 
-</div>
+        </div>
 
 
-<div id="playingList">
-</div>
+        <div id="playingList">
+        </div>
 
     </section>
 
 
 
     <!-- ================================= -->
-    <!-- 終了 -->
+    <!-- 終了履歴（処理用・画面では非表示） -->
     <!-- ================================= -->
 
-    <section>
-
-        <h2>
-            ⚪ 終了
-        </h2>
-
+    <section style="display: none;">
 
         <div id="finishedList">
         </div>
@@ -347,35 +332,36 @@
     </section>
 
 
-<!-- ================================= -->
-<!-- URL参加者 全体共有チャット -->
-<!-- ================================= -->
 
-<section
-    id="sharedChatViewer"
-    class="shared-chat-panel shared-chat-viewer"
->
+    <!-- ================================= -->
+    <!-- URL参加者 全体共有チャット -->
+    <!-- ================================= -->
 
-    <div class="shared-chat-title">
-        💬 URL参加者 全体共有チャット
-    </div>
-
-    <div
-        id="sharedChatStatus"
-        class="shared-chat-note"
+    <section
+        id="sharedChatViewer"
+        class="shared-chat-panel shared-chat-viewer"
     >
-        チャットを確認中…
-    </div>
 
-    <div
-        id="sharedChatList"
-        class="shared-chat-list"
-    ></div>
-
-</section>
+        <div class="shared-chat-title">
+            💬 URL参加者 全体共有チャット
+        </div>
 
 
-</div>
+        <div
+            id="sharedChatStatus"
+            class="shared-chat-note"
+        >
+            チャットを確認中…
+        </div>
+
+
+        <div
+            id="sharedChatList"
+            class="shared-chat-list"
+        ></div>
+
+    </section>
+
 
 </div>
 
