@@ -29,6 +29,7 @@
 .shared-chat-list {
     height: 300px;
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
     padding: 10px;
     background: #202020;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -80,6 +81,10 @@
     line-height: 1.55;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    cursor: text;
 }
 
 .shared-chat-compose {
@@ -194,7 +199,6 @@ body.participant-chat-active #joinButton {
         padding: 10px 14px;
     }
 }
-
 
 
 /* ========================================
