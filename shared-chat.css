@@ -5,9 +5,11 @@
 .shared-chat-panel {
     margin-top: 26px;
     padding: 16px;
-    background: #303030;
     border-radius: 14px;
-    box-shadow: 0 3px 12px rgba(0, 0, 0, 0.28);
+    background: #303030;
+    box-shadow:
+        0 3px 12px
+        rgba(0, 0, 0, 0.28);
     text-align: left;
 }
 
@@ -31,9 +33,11 @@
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     padding: 10px;
-    background: #202020;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border:
+        1px solid
+        rgba(255, 255, 255, 0.08);
     border-radius: 10px;
+    background: #202020;
 }
 
 .shared-chat-empty {
@@ -45,8 +49,8 @@
 
 .shared-chat-item {
     padding: 9px 10px;
-    background: #383838;
     border-radius: 9px;
+    background: #383838;
 }
 
 .shared-chat-item + .shared-chat-item {
@@ -63,10 +67,10 @@
 
 .shared-chat-name {
     min-width: 0;
-    overflow-wrap: anywhere;
     color: #72d6ff;
     font-size: 14px;
     font-weight: bold;
+    overflow-wrap: anywhere;
 }
 
 .shared-chat-time {
@@ -81,11 +85,62 @@
     line-height: 1.55;
     overflow-wrap: anywhere;
     white-space: pre-wrap;
+
     -webkit-user-select: text;
     user-select: text;
+
     -webkit-touch-callout: default;
     cursor: text;
 }
+
+
+/* ========================================
+   削除ボタン・削除済み表示
+======================================== */
+
+.shared-chat-delete-button {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 4px 9px;
+
+    border:
+        1px solid
+        rgba(255, 120, 120, 0.55);
+
+    border-radius: 7px;
+
+    background:
+        rgba(150, 45, 45, 0.28);
+
+    color: #ffb0b0;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.shared-chat-item-deleted {
+    border:
+        1px dashed
+        rgba(255, 255, 255, 0.22);
+
+    opacity: 0.72;
+}
+
+.shared-chat-item-deleted .shared-chat-text {
+    color: #b8b8b8;
+    font-style: italic;
+}
+
+.shared-chat-deleted-note {
+    margin-top: 5px;
+    color: #ffb66e;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+
+/* ========================================
+   入力欄
+======================================== */
 
 .shared-chat-compose {
     margin-top: 10px;
@@ -98,11 +153,17 @@
     margin: 0;
     padding: 11px 12px;
     resize: vertical;
-    border: 1px solid rgba(255, 255, 255, 0.13);
+
+    border:
+        1px solid
+        rgba(255, 255, 255, 0.13);
+
     border-radius: 9px;
     outline: none;
+
     background: #242424;
     color: #ffffff;
+
     font: inherit;
     font-size: 16px;
 }
@@ -133,10 +194,13 @@
     min-width: 100px;
     margin: 0;
     padding: 10px 18px;
+
     border: none;
     border-radius: 9px;
+
     background: #397fc3;
     color: #ffffff;
+
     font-size: 15px;
     font-weight: bold;
     cursor: pointer;
@@ -181,6 +245,30 @@ body.participant-chat-active #joinButton {
     display: none;
 }
 
+
+/* ========================================
+   Moderator発言
+======================================== */
+
+.shared-chat-item-moderator {
+    border: 1px solid #6f7de0;
+    background: #303657;
+}
+
+.shared-chat-item-moderator .shared-chat-name {
+    color: #ffd76a;
+}
+
+#moderatorChatCount {
+    color: #aaaaaa;
+    font-size: 12px;
+}
+
+
+/* ========================================
+   スマホ
+======================================== */
+
 @media (max-width: 480px) {
     .shared-chat-panel {
         padding: 13px;
@@ -198,23 +286,4 @@ body.participant-chat-active #joinButton {
         min-width: 88px;
         padding: 10px 14px;
     }
-}
-
-
-/* ========================================
-   Moderator発言
-======================================== */
-
-.shared-chat-item-moderator {
-    background: #303657;
-    border: 1px solid #6f7de0;
-}
-
-.shared-chat-item-moderator .shared-chat-name {
-    color: #ffd76a;
-}
-
-#moderatorChatCount {
-    color: #aaaaaa;
-    font-size: 12px;
 }

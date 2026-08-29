@@ -386,6 +386,7 @@ function canManageCurrentRoom() {
 
 
     // Ownerは全部屋OK
+
     if (
         currentProfile.role ===
         "owner"
@@ -396,9 +397,11 @@ function canManageCurrentRoom() {
 
 
     // Moderatorは担当部屋のみ
+
     return (
         currentProfile.role ===
             "moderator" &&
+
         currentRoom.moderator_user_id ===
             currentUser.id
     );
@@ -421,9 +424,12 @@ function showLoggedInUser() {
 
 
     loginRole.textContent =
+
         currentProfile?.role ===
             "owner"
+
             ? " / Owner"
+
             : " / Moderator";
 }
 
@@ -446,8 +452,6 @@ async function authorizeExistingSession() {
         );
 
 
-    // 匿名ログイン済みだが
-    // まだ招待コード未使用
     if (!currentProfile) {
 
         showInvitePanel();
@@ -470,8 +474,6 @@ async function authorizeExistingSession() {
         !canManageCurrentRoom()
     ) {
 
-        // 別部屋のModerator権限が残っている場合は
-        // エラーで止めず、招待コード入力画面を表示
         if (
             currentProfile.role ===
             "moderator"
@@ -555,13 +557,10 @@ async function ensureAnonymousSession() {
         null;
 
 
-    // =====================================
-    // すでに匿名ユーザーなら再利用
-    // =====================================
-
     if (
         existingUser &&
-        existingUser.is_anonymous === true
+        existingUser.is_anonymous ===
+            true
     ) {
 
         currentUser =
@@ -572,24 +571,16 @@ async function ensureAnonymousSession() {
     }
 
 
-    // =====================================
-    // Ownerなど通常アカウントが残っていたら
-    // Moderator用途には絶対使わない
-    // =====================================
-
     if (existingUser) {
 
         await roomAdminSupabase
             .auth
             .signOut({
-                scope: "local"
+                scope:
+                    "local"
             });
     }
 
-
-    // =====================================
-    // 新しい匿名ユーザーを作成
-    // =====================================
 
     const {
         data,
@@ -673,39 +664,38 @@ async function claimInvite() {
     );
 
 
-try {
+    try {
 
-    // =====================================
-    // 別部屋のModeratorセッションを切替
-    // =====================================
+        if (
+            currentUser &&
 
-    if (
-        currentUser &&
-        currentProfile?.role === "moderator" &&
-        currentRoom &&
-        currentRoom.moderator_user_id !== currentUser.id
-    ) {
+            currentProfile?.role ===
+                "moderator" &&
 
-        await roomAdminSupabase
-            .auth
-            .signOut({
-                scope: "local"
-            });
+            currentRoom &&
 
-        currentUser = null;
-        currentProfile = null;
-    }
+            currentRoom.moderator_user_id !==
+                currentUser.id
+        ) {
 
-    // =====================================
-    // 匿名Authユーザーを確保
-    // =====================================
-
-    await ensureAnonymousSession();
+            await roomAdminSupabase
+                .auth
+                .signOut({
+                    scope:
+                        "local"
+                });
 
 
-        // =====================================
-        // 招待コードをclaim
-        // =====================================
+            currentUser =
+                null;
+
+            currentProfile =
+                null;
+        }
+
+
+        await ensureAnonymousSession();
+
 
         const {
             data,
@@ -737,10 +727,6 @@ try {
             );
         }
 
-
-        // =====================================
-        // 別部屋コードの誤使用防止
-        // =====================================
 
         if (
             data.room_id !==
@@ -896,7 +882,9 @@ async function loadParticipants() {
 
     if (!currentRoom) {
 
-        participants = [];
+        participants =
+            [];
+
 
         return false;
     }
@@ -918,14 +906,18 @@ async function loadParticipants() {
             .order(
                 "display_order",
                 {
-                    ascending: true,
-                    nullsFirst: false
+                    ascending:
+                        true,
+
+                    nullsFirst:
+                        false
                 }
             )
             .order(
                 "joined_at",
                 {
-                    ascending: true
+                    ascending:
+                        true
                 }
             );
 
@@ -955,7 +947,7 @@ async function loadParticipants() {
 
 
 // ========================================
-// 初参加 / 再参加判定
+// 初参加・再参加判定
 // ========================================
 
 function isRejoinPerson(
@@ -969,19 +961,24 @@ function isRejoinPerson(
 
 
     return (
+
         person.note ===
             "rejoin" ||
+
         (
             person.note !==
                 "initial" &&
+
             Number.isFinite(
                 Number(
                     person.display_order
                 )
             ) &&
+
             Number(
                 person.display_order
-            ) >= 1000000
+            ) >=
+                1000000
         )
     );
 }
@@ -1051,7 +1048,8 @@ function getWaitingPosition(
 
 
     if (
-        index === -1
+        index ===
+        -1
     ) {
 
         return "-";
@@ -1063,7 +1061,7 @@ function getWaitingPosition(
 
 
 // ========================================
-// 描画
+// 全体描画
 // ========================================
 
 function render() {
@@ -1101,6 +1099,7 @@ function render() {
             person =>
                 person.status ===
                     "waiting" &&
+
                 person.room_id ===
                     null
         );
@@ -1125,9 +1124,12 @@ function render() {
 
 
     roomState.textContent =
+
         members.length >=
             capacity
+
             ? "🔴 満員です"
+
             : `🟢 空き ${free}人`;
 
 
@@ -1157,7 +1159,8 @@ function renderMembers(
 
 
     if (
-        members.length === 0
+        members.length ===
+        0
     ) {
 
         roomMemberList.appendChild(
@@ -1230,27 +1233,37 @@ function renderMembers(
                 "person-meta";
 
 
-meta.innerHTML =
-    `メイン待機：
-    <strong>
-        ${getWaitingPosition(person)}番
-    </strong>`;
+            meta.innerHTML =
+                `メイン待機：
+                <strong>
+                    ${getWaitingPosition(
+                        person
+                    )}番
+                </strong>`;
 
 
-const gameName =
-    document.createElement(
-        "div"
-    );
+            const gameName =
+                document.createElement(
+                    "div"
+                );
 
 
-gameName.className =
-    "person-meta";
+            gameName.className =
+
+                person.game_name
+
+                    ? "game-name game-name-set"
+
+                    : "game-name game-name-empty";
 
 
-gameName.textContent =
-    person.game_name
-        ? `🎮 スプラ名：${person.game_name}`
-        : "🎮 スプラ名：未登録";
+            gameName.textContent =
+
+                person.game_name
+
+                    ? `🎮 スプラ名：${person.game_name}`
+
+                    : "🎮 スプラ名：未登録";
 
 
             const returnButton =
@@ -1282,17 +1295,21 @@ gameName.textContent =
                 name
             );
 
+
             card.appendChild(
                 badge
             );
+
 
             card.appendChild(
                 meta
             );
 
+
             card.appendChild(
                 gameName
             );
+
 
             card.appendChild(
                 returnButton
@@ -1322,7 +1339,8 @@ function renderWaiting(
 
 
     if (
-        waiting.length === 0
+        waiting.length ===
+        0
     ) {
 
         mainWaitingList.appendChild(
@@ -1395,28 +1413,38 @@ function renderWaiting(
                 "person-meta";
 
 
-meta.innerHTML =
-    `現在
-    <strong>
-        ${getWaitingPosition(person)}番
-    </strong>
-    ／ メイン待機`;
+            meta.innerHTML =
+                `現在
+                <strong>
+                    ${getWaitingPosition(
+                        person
+                    )}番
+                </strong>
+                ／ メイン待機`;
 
 
-const gameName =
-    document.createElement(
-        "div"
-    );
+            const gameName =
+                document.createElement(
+                    "div"
+                );
 
 
-gameName.className =
-    "person-meta";
+            gameName.className =
+
+                person.game_name
+
+                    ? "game-name game-name-set"
+
+                    : "game-name game-name-empty";
 
 
-gameName.textContent =
-    person.game_name
-        ? `🎮 スプラ名：${person.game_name}`
-        : "🎮 スプラ名：未登録";
+            gameName.textContent =
+
+                person.game_name
+
+                    ? `🎮 スプラ名：${person.game_name}`
+
+                    : "🎮 スプラ名：未登録";
 
 
             const addButton =
@@ -1462,17 +1490,21 @@ gameName.textContent =
                 name
             );
 
+
             card.appendChild(
                 badge
             );
+
 
             card.appendChild(
                 meta
             );
 
+
             card.appendChild(
                 gameName
             );
+
 
             card.appendChild(
                 addButton
@@ -1674,11 +1706,14 @@ async function refreshAll() {
         refreshing =
             false;
 
+
         refreshButton.disabled =
             false;
 
+
         refreshButton.textContent =
             "🔄 最新情報に更新";
+
 
         return;
     }
@@ -1785,10 +1820,6 @@ async function initialize() {
         }
 
 
-        // =====================================
-        // 未ログイン
-        // =====================================
-
         if (
             !data.session ||
             !data.session.user
@@ -1799,10 +1830,6 @@ async function initialize() {
             return;
         }
 
-
-        // =====================================
-        // 既存セッション
-        // =====================================
 
         currentUser =
             data.session.user;
@@ -1845,11 +1872,13 @@ inviteCodeInput.addEventListener(
 
         if (
             event.key ===
-            "Enter" &&
+                "Enter" &&
+
             !claimInviteButton.disabled
         ) {
 
             event.preventDefault();
+
 
             claimInviteButton.click();
         }

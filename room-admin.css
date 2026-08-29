@@ -35,9 +35,7 @@ button {
 .app {
     width: 100%;
     max-width: 620px;
-
     margin: 0 auto;
-
     padding:
         16px
         14px
@@ -60,10 +58,8 @@ button {
 
 .status-text {
     margin-top: 6px;
-
-    font-size: 13px;
-
     color: #aaaaaa;
+    font-size: 13px;
 }
 
 
@@ -74,12 +70,9 @@ button {
 .card,
 .person-card,
 .empty-card {
-    background: #303030;
-
-    border-radius: 14px;
-
     padding: 16px;
-
+    border-radius: 14px;
+    background: #303030;
     box-shadow:
         0 3px 10px
         rgba(0, 0, 0, 0.24);
@@ -95,36 +88,25 @@ button {
 }
 
 .room-name {
-    font-size: 24px;
-
-    font-weight: bold;
-
     margin-bottom: 12px;
+    font-size: 24px;
+    font-weight: bold;
 }
 
 .room-meta {
     display: flex;
-
     flex-wrap: wrap;
-
     gap: 6px 18px;
-
-    font-size: 15px;
-
     color: #dddddd;
+    font-size: 15px;
 }
 
 .room-state {
     margin-top: 12px;
-
     padding: 9px 11px;
-
-    background: #252525;
-
     border-radius: 9px;
-
+    background: #252525;
     font-size: 14px;
-
     font-weight: bold;
 }
 
@@ -142,16 +124,13 @@ button {
         0
         0
         10px;
-
     font-size: 20px;
 }
 
 .section-note {
     margin-bottom: 10px;
-
-    font-size: 13px;
-
     color: #aaaaaa;
+    font-size: 13px;
 }
 
 
@@ -161,9 +140,7 @@ button {
 
 .list {
     display: flex;
-
     flex-direction: column;
-
     gap: 10px;
 }
 
@@ -174,26 +151,46 @@ button {
 
 .person-card {
     display: flex;
-
     flex-direction: column;
-
     gap: 12px;
 }
 
 .person-name {
     font-size: 19px;
-
     font-weight: bold;
-
     word-break: break-word;
 }
 
 .person-meta {
-    font-size: 13px;
-
     color: #bbbbbb;
-
+    font-size: 13px;
     line-height: 1.6;
+}
+
+
+/* ========================================
+   スプラ名
+======================================== */
+
+.game-name {
+    padding: 9px 11px;
+    border-radius: 9px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.game-name-set {
+    border: 1px solid rgba(94, 190, 232, 0.55);
+    background: rgba(54, 126, 163, 0.22);
+    color: #8edcff;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.game-name-empty {
+    background: rgba(255, 255, 255, 0.04);
+    color: #999999;
+    font-size: 13px;
 }
 
 
@@ -203,17 +200,12 @@ button {
 
 .badge {
     display: inline-block;
-
     width: fit-content;
-
     padding:
         4px
         9px;
-
     border-radius: 999px;
-
     font-size: 12px;
-
     font-weight: bold;
 }
 
@@ -237,25 +229,18 @@ button {
 .action-button,
 .secondary-button {
     width: 100%;
-
     min-height: 48px;
-
-    border: none;
-
-    border-radius: 11px;
-
     padding:
         12px
         14px;
-
+    border: none;
+    border-radius: 11px;
     font-weight: bold;
-
     cursor: pointer;
 }
 
 .action-button {
     background: #39b54a;
-
     color: white;
 }
 
@@ -273,7 +258,6 @@ button {
 
 .secondary-button {
     background: #444444;
-
     color: white;
 }
 
@@ -284,10 +268,8 @@ button {
 
 .empty-card {
     color: #bbbbbb;
-
-    text-align: center;
-
     font-size: 14px;
+    text-align: center;
 }
 
 
@@ -304,10 +286,7 @@ button {
    スマホ
 ======================================== */
 
-@media (
-    max-width: 480px
-) {
-
+@media (max-width: 480px) {
     .app {
         padding:
             13px
@@ -334,7 +313,6 @@ button {
     .action-button,
     .secondary-button {
         min-height: 52px;
-
         font-size: 16px;
     }
 }

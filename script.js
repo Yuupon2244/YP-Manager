@@ -1,5 +1,5 @@
 // ========================================
-// YP-Manager 管理画面 v1.1.0
+// YP-Manager 管理画面 v1.2.0
 // ========================================
 
 
@@ -45,7 +45,6 @@ const rejoinToggle =
         "rejoinToggle"
     );
 
-
 const waitingList =
     document.getElementById(
         "waitingList"
@@ -56,12 +55,10 @@ const playingList =
         "playingList"
     );
 
-
 const finishAllPlayingButton =
     document.getElementById(
         "finishAllPlayingButton"
     );
-
 
 const finishedList =
     document.getElementById(
@@ -98,26 +95,38 @@ const urlJoinNotification =
 // 好きなSEを使う場合は、音声ファイルを同じフォルダへ置き、
 // 例："notification.mp3" のようにファイル名を指定する。
 // 空欄の場合は、追加ファイル不要の標準ピコン音を使用する。
+
 const URL_JOIN_SOUND_FILE = "";
 
-let urlNotificationInitialized = false;
-let knownUrlParticipantIds = new Set();
-let notificationHideTimer = null;
-let notificationAudioContext = null;
+let urlNotificationInitialized =
+    false;
+
+let knownUrlParticipantIds =
+    new Set();
+
+let notificationHideTimer =
+    null;
+
+let notificationAudioContext =
+    null;
 
 
 function unlockNotificationAudio() {
 
     try {
 
-        if (!notificationAudioContext) {
+        if (
+            !notificationAudioContext
+        ) {
 
             const AudioContextClass =
                 window.AudioContext ||
                 window.webkitAudioContext;
 
 
-            if (AudioContextClass) {
+            if (
+                AudioContextClass
+            ) {
 
                 notificationAudioContext =
                     new AudioContextClass();
@@ -126,11 +135,13 @@ function unlockNotificationAudio() {
 
 
         if (
-            notificationAudioContext?.state ===
+            notificationAudioContext
+                ?.state ===
             "suspended"
         ) {
 
-            notificationAudioContext.resume();
+            notificationAudioContext
+                .resume();
         }
 
     } catch (error) {
@@ -147,7 +158,8 @@ window.addEventListener(
     "pointerdown",
     unlockNotificationAudio,
     {
-        once: true
+        once:
+            true
     }
 );
 
@@ -157,17 +169,22 @@ function playDefaultNotificationSound() {
     unlockNotificationAudio();
 
 
-    if (!notificationAudioContext) {
+    if (
+        !notificationAudioContext
+    ) {
 
         return;
     }
 
 
     const now =
-        notificationAudioContext.currentTime;
+        notificationAudioContext
+            .currentTime;
+
 
     const gain =
-        notificationAudioContext.createGain();
+        notificationAudioContext
+            .createGain();
 
 
     gain.gain.setValueAtTime(
@@ -175,57 +192,81 @@ function playDefaultNotificationSound() {
         now
     );
 
-    gain.gain.exponentialRampToValueAtTime(
-        0.22,
-        now + 0.02
-    );
 
-    gain.gain.exponentialRampToValueAtTime(
-        0.0001,
-        now + 0.55
-    );
+    gain.gain
+        .exponentialRampToValueAtTime(
+            0.22,
+            now + 0.02
+        );
+
+
+    gain.gain
+        .exponentialRampToValueAtTime(
+            0.0001,
+            now + 0.55
+        );
+
 
     gain.connect(
-        notificationAudioContext.destination
+        notificationAudioContext
+            .destination
     );
 
 
     [
         {
-            frequency: 880,
-            start: 0,
-            duration: 0.18
+            frequency:
+                880,
+
+            start:
+                0,
+
+            duration:
+                0.18
         },
         {
-            frequency: 1320,
-            start: 0.16,
-            duration: 0.32
+            frequency:
+                1320,
+
+            start:
+                0.16,
+
+            duration:
+                0.32
         }
     ].forEach(
         tone => {
 
             const oscillator =
-                notificationAudioContext.createOscillator();
+                notificationAudioContext
+                    .createOscillator();
 
 
             oscillator.type =
                 "sine";
 
-            oscillator.frequency.setValueAtTime(
-                tone.frequency,
-                now + tone.start
-            );
+
+            oscillator.frequency
+                .setValueAtTime(
+                    tone.frequency,
+                    now + tone.start
+                );
+
 
             oscillator.connect(
                 gain
             );
 
+
             oscillator.start(
                 now + tone.start
             );
 
+
             oscillator.stop(
-                now + tone.start + tone.duration
+                now +
+                tone.start +
+                tone.duration
             );
         }
     );
@@ -234,7 +275,9 @@ function playDefaultNotificationSound() {
 
 async function playUrlJoinSound() {
 
-    if (!URL_JOIN_SOUND_FILE) {
+    if (
+        !URL_JOIN_SOUND_FILE
+    ) {
 
         playDefaultNotificationSound();
 
@@ -263,6 +306,7 @@ async function playUrlJoinSound() {
             error
         );
 
+
         playDefaultNotificationSound();
     }
 }
@@ -272,7 +316,9 @@ function showUrlJoinNotification(
     name
 ) {
 
-    if (!urlJoinNotification) {
+    if (
+        !urlJoinNotification
+    ) {
 
         return;
     }
@@ -281,9 +327,12 @@ function showUrlJoinNotification(
     urlJoinNotification.textContent =
         `🔔 URL参加：${name}`;
 
-    urlJoinNotification.classList.add(
-        "show"
-    );
+
+    urlJoinNotification
+        .classList
+        .add(
+            "show"
+        );
 
 
     clearTimeout(
@@ -295,9 +344,11 @@ function showUrlJoinNotification(
         setTimeout(
             () => {
 
-                urlJoinNotification.classList.remove(
-                    "show"
-                );
+                urlJoinNotification
+                    .classList
+                    .remove(
+                        "show"
+                    );
             },
             5000
         );
@@ -311,8 +362,11 @@ function detectNewUrlParticipants(
     const currentUrlParticipants =
         nextParticipants.filter(
             person =>
-                person.source === "url" &&
-                person.status === "waiting"
+                person.source ===
+                    "url" &&
+
+                person.status ===
+                    "waiting"
         );
 
 
@@ -325,13 +379,17 @@ function detectNewUrlParticipants(
         );
 
 
-    if (!urlNotificationInitialized) {
+    if (
+        !urlNotificationInitialized
+    ) {
 
         knownUrlParticipantIds =
             currentIds;
 
+
         urlNotificationInitialized =
             true;
+
 
         return;
     }
@@ -340,9 +398,10 @@ function detectNewUrlParticipants(
     const newParticipants =
         currentUrlParticipants.filter(
             person =>
-                !knownUrlParticipantIds.has(
-                    person.id
-                )
+                !knownUrlParticipantIds
+                    .has(
+                        person.id
+                    )
         );
 
 
@@ -354,6 +413,7 @@ function detectNewUrlParticipants(
         person => {
 
             playUrlJoinSound();
+
 
             showUrlJoinNotification(
                 person.name ||
@@ -369,6 +429,7 @@ function resetUrlParticipantNotification() {
     urlNotificationInitialized =
         false;
 
+
     knownUrlParticipantIds.clear();
 }
 
@@ -377,17 +438,24 @@ function resetUrlParticipantNotification() {
 // 待機順の基準値
 // ========================================
 
-const INITIAL_ORDER_BASE = 1;
-const REJOIN_ORDER_BASE = 1000000;
+const INITIAL_ORDER_BASE =
+    1;
+
+const REJOIN_ORDER_BASE =
+    1000000;
 
 
 // ========================================
 // 日時表示
 // ========================================
 
-function formatDate(dateValue) {
+function formatDate(
+    dateValue
+) {
 
-    if (!dateValue) {
+    if (
+        !dateValue
+    ) {
 
         return "";
     }
@@ -425,18 +493,23 @@ async function loadRejoinSetting() {
             .maybeSingle();
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "再参加設定取得エラー:",
             error
         );
 
+
         return;
     }
 
 
-    if (!data) {
+    if (
+        !data
+    ) {
 
         const {
             error: insertError
@@ -460,12 +533,15 @@ async function loadRejoinSetting() {
                 ]);
 
 
-        if (insertError) {
+        if (
+            insertError
+        ) {
 
             console.error(
                 "再参加設定作成エラー:",
                 insertError
             );
+
 
             return;
         }
@@ -479,7 +555,8 @@ async function loadRejoinSetting() {
         rejoinEnabled =
             String(
                 data.value
-            ) === "true";
+            ) ===
+            "true";
     }
 
 
@@ -493,13 +570,17 @@ async function loadRejoinSetting() {
 
 function renderRejoinToggle() {
 
-    if (rejoinEnabled) {
+    if (
+        rejoinEnabled
+    ) {
 
         rejoinToggle.textContent =
             "🔓 再参加受付 ON";
 
+
         rejoinToggle.style.background =
             "#39b54a";
+
 
         rejoinToggle.style.color =
             "white";
@@ -509,8 +590,10 @@ function renderRejoinToggle() {
         rejoinToggle.textContent =
             "🔒 再参加受付 OFF";
 
+
         rejoinToggle.style.background =
             "#555";
+
 
         rejoinToggle.style.color =
             "white";
@@ -530,6 +613,7 @@ async function toggleRejoin() {
 
     rejoinToggle.disabled =
         true;
+
 
     rejoinToggle.textContent =
         "変更中…";
@@ -567,18 +651,23 @@ async function toggleRejoin() {
         false;
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "再参加設定変更エラー:",
             error
         );
 
+
         alert(
             "再参加受付を変更できませんでした。"
         );
 
+
         renderRejoinToggle();
+
 
         return;
     }
@@ -622,20 +711,26 @@ async function loadCurrentSession() {
             .maybeSingle();
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "現在配信取得エラー:",
             error
         );
 
+
         currentSessionId =
             null;
+
 
         sessionStatus.textContent =
             "⚠️ 現在の配信を取得できません";
 
+
         disableAdminInput();
+
 
         return false;
     }
@@ -649,10 +744,13 @@ async function loadCurrentSession() {
         currentSessionId =
             null;
 
+
         sessionStatus.textContent =
             "⚠️ 現在受付中の配信がありません";
 
+
         disableAdminInput();
+
 
         return false;
     }
@@ -684,6 +782,7 @@ function disableAdminInput() {
     nameInput.disabled =
         true;
 
+
     addButton.disabled =
         true;
 }
@@ -693,6 +792,7 @@ function enableAdminInput() {
 
     nameInput.disabled =
         false;
+
 
     addButton.disabled =
         false;
@@ -705,11 +805,16 @@ function enableAdminInput() {
 
 async function loadParticipants() {
 
-    if (!currentSessionId) {
+    if (
+        !currentSessionId
+    ) {
 
-        participants = [];
+        participants =
+            [];
+
 
         render();
+
 
         return;
     }
@@ -731,31 +836,39 @@ async function loadParticipants() {
             .order(
                 "display_order",
                 {
-                    ascending: true,
-                    nullsFirst: false
+                    ascending:
+                        true,
+
+                    nullsFirst:
+                        false
                 }
             )
             .order(
                 "joined_at",
                 {
-                    ascending: true
+                    ascending:
+                        true
                 }
             );
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "参加者読み込みエラー:",
             error
         );
 
+
         return;
     }
 
 
     const nextParticipants =
-        data || [];
+        data ||
+        [];
 
 
     detectNewUrlParticipants(
@@ -835,47 +948,65 @@ function createPersonBox(
 
 
     const isRejoin =
-        person.note === "rejoin" ||
+        person.note ===
+            "rejoin" ||
+
         (
-            person.note !== "initial" &&
+            person.note !==
+                "initial" &&
+
             Number.isFinite(
                 Number(
                     person.display_order
                 )
             ) &&
+
             Number(
                 person.display_order
-            ) >= 1000000
+            ) >=
+                1000000
         );
 
 
     const isInitial =
-        person.note === "initial" ||
+        person.note ===
+            "initial" ||
+
         (
-            person.note !== "rejoin" &&
+            person.note !==
+                "rejoin" &&
+
             Number.isFinite(
                 Number(
                     person.display_order
                 )
             ) &&
+
             Number(
                 person.display_order
-            ) < 1000000
+            ) <
+                1000000
         );
 
 
-    if (isRejoin) {
+    if (
+        isRejoin
+    ) {
 
         typeBadge.textContent =
             "🔁 再参加";
 
+
         typeBadge.style.background =
             "#7b5bd6";
 
-    } else if (isInitial) {
+    } else if (
+        isInitial
+    ) {
 
         typeBadge.textContent =
             "🆕 初参加";
+
 
         typeBadge.style.background =
             "#2f9e63";
@@ -890,23 +1021,30 @@ function createPersonBox(
         typeBadge.style.display =
             "inline-block";
 
+
         typeBadge.style.marginLeft =
             "8px";
+
 
         typeBadge.style.padding =
             "2px 7px";
 
+
         typeBadge.style.borderRadius =
             "999px";
+
 
         typeBadge.style.fontSize =
             "12px";
 
+
         typeBadge.style.fontWeight =
             "bold";
 
+
         typeBadge.style.color =
             "white";
+
 
         typeBadge.style.verticalAlign =
             "middle";
@@ -940,7 +1078,9 @@ function createPersonBox(
 
     const sourceText =
         person.source
+
             ? ` / ${person.source}`
+
             : "";
 
 
@@ -957,12 +1097,20 @@ function createPersonBox(
 
 
     gameNameBox.className =
-        "date";
+
+        person.game_name
+
+            ? "game-name game-name-set"
+
+            : "game-name game-name-empty";
 
 
     gameNameBox.textContent =
+
         person.game_name
+
             ? `🎮 スプラ名：${person.game_name}`
+
             : "🎮 スプラ名：未登録";
 
 
@@ -980,13 +1128,16 @@ function createPersonBox(
         nameBox
     );
 
+
     personBox.appendChild(
         dateBox
     );
 
+
     personBox.appendChild(
         gameNameBox
     );
+
 
     personBox.appendChild(
         buttonsBox
@@ -995,10 +1146,15 @@ function createPersonBox(
 
     buttonsBox.appendChild(
         createButton(
+
             person.game_name
+
                 ? "🎮 スプラ名を変更"
+
                 : "🎮 スプラ名を登録",
+
             "move",
+
             () =>
                 updateGameName(
                     person
@@ -1047,29 +1203,40 @@ function createButton(
 
 
 // ========================================
-// 初参加 / 再参加判定
+// 初参加・再参加判定
 // ========================================
 
-function isRejoinPerson(person) {
+function isRejoinPerson(
+    person
+) {
 
     return (
-        person.note === "rejoin" ||
+
+        person.note ===
+            "rejoin" ||
+
         (
-            person.note !== "initial" &&
+            person.note !==
+                "initial" &&
+
             Number.isFinite(
                 Number(
                     person.display_order
                 )
             ) &&
+
             Number(
                 person.display_order
-            ) >= REJOIN_ORDER_BASE
+            ) >=
+                REJOIN_ORDER_BASE
         )
     );
 }
 
 
-function isInitialPerson(person) {
+function isInitialPerson(
+    person
+) {
 
     return !isRejoinPerson(
         person
@@ -1087,12 +1254,17 @@ async function updateGameName(
 
     const input =
         window.prompt(
+
             `${person.name}さんのスプラ名を入力してください。\n空欄で保存すると登録を解除します。`,
-            person.game_name || ""
+
+            person.game_name ||
+            ""
         );
 
 
-    if (input === null) {
+    if (
+        input === null
+    ) {
 
         return;
     }
@@ -1102,11 +1274,15 @@ async function updateGameName(
         input.trim();
 
 
-    if (gameName.length > 30) {
+    if (
+        gameName.length >
+        30
+    ) {
 
         alert(
             "スプラ名は30文字以内で入力してください。"
         );
+
 
         return;
     }
@@ -1121,7 +1297,8 @@ async function updateGameName(
             )
             .update({
                 game_name:
-                    gameName || null
+                    gameName ||
+                    null
             })
             .eq(
                 "id",
@@ -1133,16 +1310,20 @@ async function updateGameName(
             );
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "スプラ名保存エラー:",
             error
         );
 
+
         alert(
             "スプラ名を保存できませんでした。"
         );
+
 
         return;
     }
@@ -1153,7 +1334,7 @@ async function updateGameName(
 
 
 // ========================================
-// グループ最後尾の順番を取得
+// グループ最後尾の順番
 // ========================================
 
 function getNextOrderForGroup(
@@ -1166,14 +1347,18 @@ function getNextOrderForGroup(
             .filter(
                 person =>
                     person.status ===
-                    "waiting" &&
+                        "waiting" &&
+
                     person.id !==
-                    excludeId &&
+                        excludeId &&
+
                     (
                         isRejoin
+
                             ? isRejoinPerson(
                                 person
                             )
+
                             : isInitialPerson(
                                 person
                             )
@@ -1193,7 +1378,9 @@ function getNextOrderForGroup(
             );
 
 
-    if (isRejoin) {
+    if (
+        isRejoin
+    ) {
 
         const rejoinOrders =
             orders.filter(
@@ -1204,7 +1391,8 @@ function getNextOrderForGroup(
 
 
         if (
-            rejoinOrders.length === 0
+            rejoinOrders.length ===
+            0
         ) {
 
             return REJOIN_ORDER_BASE;
@@ -1228,7 +1416,8 @@ function getNextOrderForGroup(
 
 
     if (
-        initialOrders.length === 0
+        initialOrders.length ===
+        0
     ) {
 
         return INITIAL_ORDER_BASE;
@@ -1252,11 +1441,14 @@ function render() {
     waitingList.innerHTML =
         "";
 
+
     playingList.innerHTML =
         "";
 
+
     finishedList.innerHTML =
         "";
+
 
     cancelledList.innerHTML =
         "";
@@ -1293,6 +1485,7 @@ function render() {
                 "cancelled"
         );
 
+
     // =====================================
     // 待機中
     // =====================================
@@ -1316,8 +1509,6 @@ function render() {
                 document.createElement(
                     "div"
                 );
-
-
             orderBox.className =
                 "date";
 
@@ -1587,11 +1778,14 @@ function render() {
 addButton.onclick =
     async function () {
 
-        if (!currentSessionId) {
+        if (
+            !currentSessionId
+        ) {
 
             alert(
                 "現在の配信IDがありません。"
             );
+
 
             return;
         }
@@ -1601,23 +1795,28 @@ addButton.onclick =
             nameInput.value.trim();
 
 
-        if (name === "") {
+        if (
+            name === ""
+        ) {
 
             alert(
                 "参加者名を入力してください。"
             );
+
 
             return;
         }
 
 
         if (
-            name.length > 30
+            name.length >
+            30
         ) {
 
             alert(
                 "参加者名は30文字以内にしてください。"
             );
+
 
             return;
         }
@@ -1671,16 +1870,20 @@ addButton.onclick =
             false;
 
 
-        if (error) {
+        if (
+            error
+        ) {
 
             console.error(
                 "手動追加エラー:",
                 error
             );
 
+
             alert(
                 "参加者を追加できませんでした。"
             );
+
 
             return;
         }
@@ -1740,7 +1943,9 @@ async function finishTwoGames(
         );
 
 
-    if (!confirmed) {
+    if (
+        !confirmed
+    ) {
 
         return;
     }
@@ -1777,16 +1982,20 @@ async function finishTwoGames(
             );
 
 
-    if (finishError) {
+    if (
+        finishError
+    ) {
 
         console.error(
             "2試合終了処理エラー:",
             finishError
         );
 
+
         alert(
             "2試合終了処理に失敗しました。"
         );
+
 
         return;
     }
@@ -1798,6 +2007,7 @@ async function finishTwoGames(
     ) {
 
         await loadParticipants();
+
 
         return;
     }
@@ -1841,18 +2051,23 @@ async function finishTwoGames(
             ]);
 
 
-    if (insertError) {
+    if (
+        insertError
+    ) {
 
         console.error(
             "再参加待機追加エラー:",
             insertError
         );
 
+
         alert(
             "終了記録は保存されましたが、再参加待機への追加に失敗しました。"
         );
 
+
         await loadParticipants();
+
 
         return;
     }
@@ -1905,7 +2120,9 @@ async function moveToGroupEnd(
 
                 note:
                     rejoin
+
                         ? "rejoin"
+
                         : "initial"
             })
             .eq(
@@ -1918,16 +2135,20 @@ async function moveToGroupEnd(
             );
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "最後尾移動エラー:",
             error
         );
 
+
         alert(
             "最後尾へ移動できませんでした。"
         );
+
 
         return;
     }
@@ -1963,16 +2184,20 @@ async function updateStatus(
             );
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "状態変更エラー:",
             error
         );
 
+
         alert(
             "状態を変更できませんでした。"
         );
+
 
         return;
     }
@@ -1997,7 +2222,9 @@ async function cancelPerson(
         );
 
 
-    if (!confirmed) {
+    if (
+        !confirmed
+    ) {
 
         return;
     }
@@ -2011,14 +2238,16 @@ async function cancelPerson(
 
 
 // ========================================
-// 辞退 → 待機へ戻す
+// 辞退から待機へ戻す
 // ========================================
 
 async function restorePerson(
     id
 ) {
 
-    if (!currentSessionId) {
+    if (
+        !currentSessionId
+    ) {
 
         return;
     }
@@ -2027,11 +2256,14 @@ async function restorePerson(
     const person =
         participants.find(
             item =>
-                item.id === id
+                item.id ===
+                id
         );
 
 
-    if (!person) {
+    if (
+        !person
+    ) {
 
         return;
     }
@@ -2066,7 +2298,9 @@ async function restorePerson(
 
                 note:
                     rejoin
+
                         ? "rejoin"
+
                         : "initial"
             })
             .eq(
@@ -2075,16 +2309,20 @@ async function restorePerson(
             );
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "復帰エラー:",
             error
         );
 
+
         alert(
             "待機列へ戻せませんでした。"
         );
+
 
         return;
     }
@@ -2109,7 +2347,9 @@ async function deletePerson(
         );
 
 
-    if (!confirmed) {
+    if (
+        !confirmed
+    ) {
 
         return;
     }
@@ -2129,16 +2369,20 @@ async function deletePerson(
             );
 
 
-    if (error) {
+    if (
+        error
+    ) {
 
         console.error(
             "削除エラー:",
             error
         );
 
+
         alert(
             "削除できませんでした。"
         );
+
 
         return;
     }
@@ -2186,7 +2430,10 @@ async function moveWaiting(
         );
 
 
-    if (index === -1) {
+    if (
+        index ===
+        -1
+    ) {
 
         return;
     }
@@ -2199,7 +2446,8 @@ async function moveWaiting(
 
     if (
         targetIndex < 0 ||
-        targetIndex >= waiting.length
+        targetIndex >=
+            waiting.length
     ) {
 
         return;
@@ -2207,16 +2455,22 @@ async function moveWaiting(
 
 
     const first =
-        waiting[index];
+        waiting[
+            index
+        ];
+
 
     const second =
-        waiting[targetIndex];
+        waiting[
+            targetIndex
+        ];
 
 
     const firstOrder =
         Number(
             first.display_order
         );
+
 
     const secondOrder =
         Number(
@@ -2241,12 +2495,15 @@ async function moveWaiting(
             );
 
 
-    if (firstError) {
+    if (
+        firstError
+    ) {
 
         console.error(
             "並び替えエラー:",
             firstError
         );
+
 
         return;
     }
@@ -2269,12 +2526,15 @@ async function moveWaiting(
             );
 
 
-    if (secondError) {
+    if (
+        secondError
+    ) {
 
         console.error(
             "並び替えエラー:",
             secondError
         );
+
 
         return;
     }
@@ -2292,15 +2552,20 @@ async function initialize() {
 
     disableAdminInput();
 
+
     await loadRejoinSetting();
+
 
     const loaded =
         await loadCurrentSession();
 
 
-    if (!loaded) {
+    if (
+        !loaded
+    ) {
 
         render();
+
 
         return;
     }
@@ -2330,6 +2595,7 @@ setInterval(
         ) {
 
             resetUrlParticipantNotification();
+
 
             console.log(
                 "配信IDが変更されました:",
@@ -2375,11 +2641,15 @@ async function finishAllPlaying() {
         );
 
 
-    if (playingMembers.length === 0) {
+    if (
+        playingMembers.length ===
+        0
+    ) {
 
         alert(
             "現在参加中のメンバーはいません。"
         );
+
 
         return;
     }
@@ -2391,7 +2661,9 @@ async function finishAllPlaying() {
         );
 
 
-    if (!confirmed) {
+    if (
+        !confirmed
+    ) {
 
         return;
     }
@@ -2399,6 +2671,7 @@ async function finishAllPlaying() {
 
     finishAllPlayingButton.disabled =
         true;
+
 
     finishAllPlayingButton.textContent =
         "処理中…";
@@ -2412,6 +2685,7 @@ async function finishAllPlaying() {
 
     let successCount =
         0;
+
 
     const failedNames =
         [];
@@ -2453,7 +2727,9 @@ async function finishAllPlaying() {
                     );
 
 
-            if (finishError) {
+            if (
+                finishError
+            ) {
 
                 throw finishError;
             }
@@ -2461,7 +2737,8 @@ async function finishAllPlaying() {
 
             if (
                 !finishedData ||
-                finishedData.length === 0
+                finishedData.length ===
+                    0
             ) {
 
                 throw new Error(
@@ -2508,14 +2785,20 @@ async function finishAllPlaying() {
                     ]);
 
 
-            if (insertError) {
+            if (
+                insertError
+            ) {
 
                 throw insertError;
             }
 
 
-            nextOrder += 1;
-            successCount += 1;
+            nextOrder +=
+                1;
+
+
+            successCount +=
+                1;
 
         } catch (error) {
 
@@ -2539,15 +2822,20 @@ async function finishAllPlaying() {
     finishAllPlayingButton.disabled =
         false;
 
+
     finishAllPlayingButton.textContent =
         "🔁 参加中の全員を2試合終了";
 
 
-    if (failedNames.length === 0) {
+    if (
+        failedNames.length ===
+        0
+    ) {
 
         alert(
             `${successCount}人を再参加待機の最後尾へ移動しました。`
         );
+
 
         return;
     }
@@ -2559,7 +2847,9 @@ async function finishAllPlaying() {
 }
 
 
-if (finishAllPlayingButton) {
+if (
+    finishAllPlayingButton
+) {
 
     finishAllPlayingButton.addEventListener(
         "click",

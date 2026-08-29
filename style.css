@@ -1,218 +1,144 @@
 body {
-
-    margin:0;
-    padding:20px;
-
-    background:#1e1e1e;
-
-    color:white;
-
+    margin: 0;
+    padding: 20px;
+    background: #1e1e1e;
+    color: white;
     font-family:
-    "Yu Gothic UI",
-    sans-serif;
-
+        "Yu Gothic UI",
+        sans-serif;
 }
-
-
 
 .container {
-
-    max-width:600px;
-
-    margin:auto;
-
-    background:#2b2b2b;
-
-    padding:25px;
-
-    border-radius:15px;
-
+    max-width: 600px;
+    margin: auto;
+    padding: 25px;
+    border-radius: 15px;
+    background: #2b2b2b;
 }
-
-
 
 h1 {
-
-    text-align:center;
-
-    margin-bottom:5px;
-
+    margin-bottom: 5px;
+    text-align: center;
 }
-
-
 
 .subtitle {
-
-    text-align:center;
-
-    color:#aaa;
-
-    margin-bottom:25px;
-
+    margin-bottom: 25px;
+    color: #aaa;
+    text-align: center;
 }
-
-
 
 .input-area {
-
-    display:flex;
-
-    gap:10px;
-
-    margin-bottom:25px;
-
+    display: flex;
+    gap: 10px;
+    margin-bottom: 25px;
 }
-
-
 
 input {
-
-    flex:1;
-
-    padding:12px;
-
-    font-size:16px;
-
-    border-radius:8px;
-
-    border:none;
-
+    flex: 1;
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
 }
-
-
 
 button {
-
-    padding:10px 15px;
-
-    border:none;
-
-    border-radius:8px;
-
-    cursor:pointer;
-
-    font-weight:bold;
-
+    padding: 10px 15px;
+    border: none;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
 }
-
-
 
 button:hover {
-
-    opacity:0.8;
-
+    opacity: 0.8;
 }
-
-
 
 #addButton {
-
-    background:#4caf50;
-
-    color:white;
-
+    background: #4caf50;
+    color: white;
 }
-
-
 
 section {
-
-    margin-top:25px;
-
+    margin-top: 25px;
 }
-
-
 
 .person {
-
-    background:#3a3a3a;
-
-    margin-top:10px;
-
-    padding:12px;
-
-    border-radius:10px;
-
+    margin-top: 10px;
+    padding: 12px;
+    border-radius: 10px;
+    background: #3a3a3a;
 }
-
-
 
 .name {
-
-    font-size:18px;
-
-    font-weight:bold;
-
+    font-size: 18px;
+    font-weight: bold;
 }
-
-
 
 .date {
-
-    font-size:12px;
-
-    color:#aaa;
-
-    margin-top:5px;
-
+    margin-top: 5px;
+    color: #aaa;
+    font-size: 12px;
 }
 
 
+/* ========================================
+   スプラ名
+======================================== */
+
+.game-name {
+    margin-top: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.game-name-set {
+    border: 1px solid rgba(91, 192, 235, 0.55);
+    background: rgba(52, 152, 219, 0.18);
+    color: #8edcff;
+    font-size: 16px;
+    font-weight: bold;
+}
+
+.game-name-empty {
+    background: rgba(255, 255, 255, 0.04);
+    color: #999999;
+    font-size: 13px;
+}
+
+
+/* ========================================
+   操作ボタン
+======================================== */
 
 .buttons {
-
-    margin-top:10px;
-
+    margin-top: 10px;
 }
-
-
 
 .buttons button {
-
-    margin-right:5px;
-
+    margin-right: 5px;
 }
-
-
 
 .call {
-
-    background:#4caf50;
-
-    color:white;
-
+    background: #4caf50;
+    color: white;
 }
-
-
 
 .finish {
-
-    background:#777;
-
-    color:white;
-
+    background: #777;
+    color: white;
 }
-
-
 
 .delete {
-
-    background:#c0392b;
-
-    color:white;
-
+    background: #c0392b;
+    color: white;
 }
-
-
 
 .move {
-
-    background:#3498db;
-
-    color:white;
-
+    background: #3498db;
+    color: white;
 }
-
 
 
 /* ========================================
@@ -220,33 +146,35 @@ section {
 ======================================== */
 
 .url-join-notification {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    z-index: 9999;
 
-    position:fixed;
-    top:20px;
-    left:50%;
-    transform:translate(-50%, -20px);
-    z-index:9999;
+    width: calc(100% - 40px);
+    max-width: 520px;
+    box-sizing: border-box;
 
-    width:calc(100% - 40px);
-    max-width:520px;
-    box-sizing:border-box;
+    padding: 14px 18px;
+    border: 2px solid #66d9ff;
+    border-radius: 12px;
 
-    padding:14px 18px;
-    border:2px solid #66d9ff;
-    border-radius:12px;
+    transform: translate(-50%, -20px);
 
-    background:rgba(20, 45, 58, 0.97);
-    color:#fff;
+    background: rgba(20, 45, 58, 0.97);
+    color: #fff;
 
-    font-size:17px;
-    font-weight:bold;
-    text-align:center;
+    box-shadow:
+        0 8px 24px
+        rgba(0, 0, 0, 0.4);
 
-    box-shadow:0 8px 24px rgba(0, 0, 0, 0.4);
+    font-size: 17px;
+    font-weight: bold;
+    text-align: center;
 
-    opacity:0;
-    visibility:hidden;
-    pointer-events:none;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
 
     transition:
         opacity 0.2s ease,
@@ -254,11 +182,8 @@ section {
         visibility 0.2s ease;
 }
 
-
-
 .url-join-notification.show {
-
-    opacity:1;
-    visibility:visible;
-    transform:translate(-50%, 0);
+    transform: translate(-50%, 0);
+    opacity: 1;
+    visibility: visible;
 }
