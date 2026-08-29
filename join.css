@@ -90,6 +90,20 @@ button{
     background:#2ea043;
 }
 
+#viewerButton{
+    margin-top:12px;
+
+    background:#397fc3;
+}
+
+#viewerButton:hover{
+    background:#2f6da8;
+}
+
+.join-choice-buttons{
+    width:100%;
+}
+
 .cancel-button{
     background:#d73a32;
 

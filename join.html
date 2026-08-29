@@ -31,7 +31,7 @@
     </h1>
 
     <p class="sub">
-        名前を入力して参加してください！
+        名前を入力して利用方法を選んでください！
     </p>
 
     <input
@@ -42,12 +42,23 @@
         autocomplete="off"
     >
 
-    <button
-        id="joinButton"
-        type="button"
-    >
-        参加する
-    </button>
+    <div class="join-choice-buttons">
+
+        <button
+            id="joinButton"
+            type="button"
+        >
+            🎮 待機列に参加する
+        </button>
+
+        <button
+            id="viewerButton"
+            type="button"
+        >
+            💬 チャットのみ利用する
+        </button>
+
+    </div>
 
     <button
         id="cancelButton"
