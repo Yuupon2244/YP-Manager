@@ -39,11 +39,17 @@ let ownerChatMessage = null;
 
 
 function getSharedChatClient() {
-    if (typeof roomAdminSupabase !== "undefined") {
+    if (
+        typeof roomAdminSupabase !==
+        "undefined"
+    ) {
         return roomAdminSupabase;
     }
 
-    if (typeof supabaseClient !== "undefined") {
+    if (
+        typeof supabaseClient !==
+        "undefined"
+    ) {
         return supabaseClient;
     }
 
@@ -71,7 +77,10 @@ function getSharedChatSessionId() {
 
 
 function canShowSharedChatViewer() {
-    if (typeof authReady !== "undefined") {
+    if (
+        typeof authReady !==
+        "undefined"
+    ) {
         return authReady === true;
     }
 
@@ -93,10 +102,9 @@ function isModeratorChatPage() {
 }
 
 
+// Owner画面ではauthReadyを使用しない
 function isOwnerChatPage() {
     return (
-        typeof authReady !== "undefined" &&
-        authReady === true &&
         typeof ypAdminProfile !== "undefined" &&
         ypAdminProfile?.role === "owner" &&
         !isModeratorChatPage()
@@ -125,6 +133,7 @@ function ensureOwnerChatCompose() {
 
     ownerChatInput.maxLength = 100;
     ownerChatInput.rows = 2;
+
     ownerChatInput.placeholder =
         "Ownerとしてメッセージを入力（100文字まで）";
 
@@ -240,7 +249,9 @@ function formatSharedChatTime(value) {
         return "";
     }
 
-    return new Date(value).toLocaleTimeString(
+    return new Date(
+        value
+    ).toLocaleTimeString(
         "ja-JP",
         {
             hour: "2-digit",
@@ -250,15 +261,20 @@ function formatSharedChatTime(value) {
 }
 
 
-function renderSharedChatViewer(messages) {
-    const signature = JSON.stringify(
-        messages.map(item => [
-            item.message_id,
-            item.sent_at,
-            item.is_deleted,
-            item.can_delete
-        ])
-    );
+function renderSharedChatViewer(
+    messages
+) {
+    const signature =
+        JSON.stringify(
+            messages.map(
+                item => [
+                    item.message_id,
+                    item.sent_at,
+                    item.is_deleted,
+                    item.can_delete
+                ]
+            )
+        );
 
     if (
         signature ===
@@ -275,14 +291,17 @@ function renderSharedChatViewer(messages) {
         sharedChatList.scrollTop -
         sharedChatList.clientHeight < 80;
 
-    sharedChatList.innerHTML = "";
+    sharedChatList.innerHTML =
+        "";
 
     if (
         messages.length ===
         0
     ) {
         const empty =
-            document.createElement("div");
+            document.createElement(
+                "div"
+            );
 
         empty.className =
             "shared-chat-empty";
@@ -297,123 +316,175 @@ function renderSharedChatViewer(messages) {
         return;
     }
 
-    messages.forEach(item => {
-        const card =
-            document.createElement("div");
-
-        card.className =
-            item.sender_type === "owner"
-                ? "shared-chat-item shared-chat-item-owner"
-                : (
-                    item.sender_type === "moderator"
-                        ? "shared-chat-item shared-chat-item-moderator"
-                        : "shared-chat-item"
+    messages.forEach(
+        item => {
+            const card =
+                document.createElement(
+                    "div"
                 );
 
-        const meta =
-            document.createElement("div");
+            card.className =
+                item.sender_type ===
+                "owner"
+                    ? "shared-chat-item shared-chat-item-owner"
+                    : (
+                        item.sender_type ===
+                        "moderator"
+                            ? "shared-chat-item shared-chat-item-moderator"
+                            : "shared-chat-item"
+                    );
 
-        meta.className =
-            "shared-chat-meta";
-
-        const name =
-            document.createElement("div");
-
-        name.className =
-            "shared-chat-name";
-
-        name.textContent =
-            item.sender_type === "owner"
-                ? `👑 ${item.participant_name || "Owner"}（Owner）`
-                : (
-                    item.sender_type === "moderator"
-                        ? `🛡 ${item.participant_name || "Moderator"}（Moderator）`
-                        : item.participant_name || "名前不明"
+            const meta =
+                document.createElement(
+                    "div"
                 );
 
-        const time =
-            document.createElement("div");
+            meta.className =
+                "shared-chat-meta";
 
-        time.className =
-            "shared-chat-time";
+            const name =
+                document.createElement(
+                    "div"
+                );
 
-        time.textContent =
-            formatSharedChatTime(
-                item.sent_at
+            name.className =
+                "shared-chat-name";
+
+            name.textContent =
+                item.sender_type ===
+                    "owner"
+                    ? `👑 ${
+                        item.participant_name ||
+                        "Owner"
+                    }（Owner）`
+                    : (
+                        item.sender_type ===
+                            "moderator"
+                            ? `🛡 ${
+                                item.participant_name ||
+                                "Moderator"
+                            }（Moderator）`
+                            : (
+                                item.participant_name ||
+                                "名前不明"
+                            )
+                    );
+
+            const time =
+                document.createElement(
+                    "div"
+                );
+
+            time.className =
+                "shared-chat-time";
+
+            time.textContent =
+                formatSharedChatTime(
+                    item.sent_at
+                );
+
+            const text =
+                document.createElement(
+                    "div"
+                );
+
+            text.className =
+                "shared-chat-text";
+
+            text.textContent =
+                item.message_text ||
+                "";
+
+            meta.appendChild(
+                name
             );
 
-        const text =
-            document.createElement("div");
-
-        text.className =
-            "shared-chat-text";
-
-        text.textContent =
-            item.message_text || "";
-
-        meta.appendChild(name);
-        meta.appendChild(time);
-
-        if (item.is_deleted) {
-            card.classList.add(
-                "shared-chat-item-deleted"
+            meta.appendChild(
+                time
             );
 
-            const deletedNote =
-                document.createElement("div");
+            if (
+                item.is_deleted
+            ) {
+                card.classList.add(
+                    "shared-chat-item-deleted"
+                );
 
-            deletedNote.className =
-                "shared-chat-deleted-note";
+                const deletedNote =
+                    document.createElement(
+                        "div"
+                    );
 
-            deletedNote.textContent =
-                `削除済み${
-                    item.deleted_by_name
-                        ? `（${item.deleted_by_name}）`
-                        : ""
-                }`;
+                deletedNote.className =
+                    "shared-chat-deleted-note";
 
-            card.appendChild(meta);
-            card.appendChild(text);
-            card.appendChild(deletedNote);
+                deletedNote.textContent =
+                    `削除済み${
+                        item.deleted_by_name
+                            ? `（${item.deleted_by_name}）`
+                            : ""
+                    }`;
+
+                card.appendChild(
+                    meta
+                );
+
+                card.appendChild(
+                    text
+                );
+
+                card.appendChild(
+                    deletedNote
+                );
+
+                sharedChatList.appendChild(
+                    card
+                );
+
+                return;
+            }
+
+            if (
+                item.can_delete
+            ) {
+                const deleteButton =
+                    document.createElement(
+                        "button"
+                    );
+
+                deleteButton.type =
+                    "button";
+
+                deleteButton.className =
+                    "shared-chat-delete-button";
+
+                deleteButton.textContent =
+                    "削除";
+
+                deleteButton.onclick =
+                    () =>
+                        deleteSharedChatMessage(
+                            item.message_id
+                        );
+
+                meta.appendChild(
+                    deleteButton
+                );
+            }
+
+            card.appendChild(
+                meta
+            );
+
+            card.appendChild(
+                text
+            );
 
             sharedChatList.appendChild(
                 card
             );
-
-            return;
         }
-
-        if (item.can_delete) {
-            const deleteButton =
-                document.createElement("button");
-
-            deleteButton.type =
-                "button";
-
-            deleteButton.className =
-                "shared-chat-delete-button";
-
-            deleteButton.textContent =
-                "削除";
-
-            deleteButton.onclick =
-                () =>
-                    deleteSharedChatMessage(
-                        item.message_id
-                    );
-
-            meta.appendChild(
-                deleteButton
-            );
-        }
-
-        card.appendChild(meta);
-        card.appendChild(text);
-
-        sharedChatList.appendChild(
-            card
-        );
-    });
+    );
 
     if (
         nearBottom ||
@@ -445,7 +516,9 @@ async function deleteSharedChatMessage(
                 ? "moderator_delete_own_message"
                 : "owner_delete_participant_message";
 
-        const { error } =
+        const {
+            error
+        } =
             await client.rpc(
                 rpcName,
                 {
@@ -458,7 +531,8 @@ async function deleteSharedChatMessage(
             throw error;
         }
 
-        sharedChatViewerSignature = "";
+        sharedChatViewerSignature =
+            "";
 
         await loadSharedChatViewer();
 
@@ -538,7 +612,9 @@ async function loadSharedChatViewer() {
         }
 
         const messages =
-            Array.isArray(data)
+            Array.isArray(
+                data
+            )
                 ? data
                 : [];
 
@@ -651,7 +727,9 @@ async function sendOwnerChatMessage() {
     setOwnerChatFeedback("");
 
     try {
-        const { error } =
+        const {
+            error
+        } =
             await client.rpc(
                 "send_owner_message",
                 {
@@ -684,7 +762,9 @@ async function sendOwnerChatMessage() {
 
         setTimeout(
             () =>
-                setOwnerChatFeedback(""),
+                setOwnerChatFeedback(
+                    ""
+                ),
             3000
         );
 
@@ -696,7 +776,7 @@ async function sendOwnerChatMessage() {
 
         setOwnerChatFeedback(
             error?.message ||
-                "送信できませんでした。",
+            "送信できませんでした。",
             true
         );
 
@@ -788,7 +868,9 @@ async function sendModeratorChatMessage() {
         const client =
             getSharedChatClient();
 
-        const { error } =
+        const {
+            error
+        } =
             await client.rpc(
                 "send_moderator_message",
                 {
@@ -826,7 +908,9 @@ async function sendModeratorChatMessage() {
 
         setTimeout(
             () =>
-                setModeratorChatFeedback(""),
+                setModeratorChatFeedback(
+                    ""
+                ),
             5000
         );
 
@@ -838,7 +922,7 @@ async function sendModeratorChatMessage() {
 
         setModeratorChatFeedback(
             error?.message ||
-                "送信できませんでした。",
+            "送信できませんでした。",
             true
         );
 
@@ -867,7 +951,9 @@ if (
     moderatorChatInput.addEventListener(
         "input",
         () => {
-            if (moderatorChatCount) {
+            if (
+                moderatorChatCount
+            ) {
                 moderatorChatCount.textContent =
                     `${moderatorChatInput.value.length} / 100`;
             }
@@ -903,7 +989,9 @@ setTimeout(
 
 setInterval(
     async () => {
-        if (document.hidden) {
+        if (
+            document.hidden
+        ) {
             return;
         }
 
