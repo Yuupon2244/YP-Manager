@@ -53,6 +53,11 @@ button:hover {
     opacity: 0.8;
 }
 
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
 #addButton {
     background: #4caf50;
     color: white;
@@ -113,11 +118,14 @@ section {
 ======================================== */
 
 .buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
     margin-top: 10px;
 }
 
 .buttons button {
-    margin-right: 5px;
+    margin: 0;
 }
 
 .call {
@@ -186,4 +194,325 @@ section {
     transform: translate(-50%, 0);
     opacity: 1;
     visibility: visible;
+}
+
+
+/* ========================================
+   参加者管理ダッシュボード
+======================================== */
+
+.participant-dashboard {
+    margin: 25px 0 30px;
+}
+
+.dashboard-main {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.dashboard-main-card {
+    padding: 18px 14px;
+    border-radius: 12px;
+    background: #363636;
+    text-align: center;
+}
+
+.dashboard-label {
+    margin-bottom: 6px;
+    color: #aaa;
+    font-size: 14px;
+    font-weight: bold;
+}
+
+.dashboard-main-value {
+    font-size: 30px;
+    font-weight: bold;
+    line-height: 1.2;
+}
+
+.dashboard-summary {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.dashboard-summary-card {
+    padding: 10px 6px;
+    border-radius: 10px;
+    background: #333;
+    text-align: center;
+}
+
+.dashboard-summary-label {
+    color: #bbb;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.dashboard-summary-value {
+    margin-top: 4px;
+    font-size: 22px;
+    font-weight: bold;
+}
+
+.next-candidate-panel {
+    padding: 15px;
+    border: 2px solid #555;
+    border-radius: 12px;
+    background: #303030;
+}
+
+.next-candidate-title {
+    margin-bottom: 10px;
+    font-size: 19px;
+    font-weight: bold;
+}
+
+.next-candidate-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.next-candidate-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 9px;
+    background: #3b3b3b;
+}
+
+.next-candidate-primary {
+    min-width: 32px;
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.next-candidate-rank {
+    width: 28px;
+    flex-shrink: 0;
+    color: #aaa;
+    font-weight: bold;
+    text-align: center;
+}
+
+.next-candidate-info {
+    min-width: 0;
+    flex: 1;
+}
+
+.next-candidate-name {
+    font-size: 17px;
+    font-weight: bold;
+    overflow-wrap: anywhere;
+}
+
+.next-candidate-detail {
+    margin-top: 3px;
+    color: #aaa;
+    font-size: 12px;
+}
+
+.next-candidate-empty {
+    padding: 12px;
+    color: #999;
+    text-align: center;
+}
+
+
+/* ========================================
+   動的ロビーダッシュボード
+======================================== */
+
+#lobbyDashboard {
+    color: #333;
+}
+
+#lobbyDashboard div {
+    color: #333;
+}
+
+
+/* ========================================
+   試合数・ロビー状態
+======================================== */
+
+.match-count {
+    display: inline-block;
+    margin-top: 6px;
+    padding: 4px 9px;
+    border-radius: 7px;
+    background: #444;
+    color: #fff;
+    font-size: 14px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.match-count-complete {
+    background: #8e3b3b;
+    color: #fff;
+}
+
+.lobby-person-state {
+    display: inline-block;
+    margin-left: 5px;
+    padding: 4px 8px;
+    border-radius: 7px;
+    background: #2e7d32;
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.lobby-person-state.playing {
+    background: #2e7d32;
+}
+
+.lobby-person-state.watching {
+    background: #6d5a24;
+}
+
+.lobby-person-state.exchange {
+    background: #8e4a2f;
+}
+
+.lobby-person-state.waiting {
+    background: #555;
+}
+
+.lobby-person-state.initial {
+    background: #2f6f4e;
+}
+
+
+/* ========================================
+   現在のロビー内カード
+======================================== */
+
+#playingList .person {
+    border-left: 4px solid #2e7d32;
+}
+
+#playingList .person:has(.lobby-person-state.watching) {
+    border-left-color: #6d5a24;
+}
+
+#playingList .person:has(.lobby-person-state.exchange) {
+    border-left-color: #8e4a2f;
+}
+
+
+/* ========================================
+   交代待ち
+======================================== */
+
+#finishedList .person {
+    border-left: 4px solid #8e4a2f;
+}
+
+
+/* ========================================
+   辞退者
+======================================== */
+
+#cancelledList .person {
+    border-left: 4px solid #c0392b;
+    opacity: 0.85;
+}
+
+
+/* ========================================
+   待機列
+======================================== */
+
+#waitingList .person {
+    border-left: 4px solid #555;
+}
+
+#waitingList .person:has(.lobby-person-state.initial) {
+    border-left-color: #2f9e63;
+}
+
+
+/* ========================================
+   スマホ表示
+======================================== */
+
+@media (max-width: 600px) {
+
+    body {
+        padding: 10px;
+    }
+
+    .container {
+        padding: 15px;
+    }
+
+    .dashboard-main {
+        gap: 8px;
+    }
+
+    .dashboard-main-card {
+        padding: 14px 8px;
+    }
+
+    .dashboard-main-value {
+        font-size: 25px;
+    }
+
+    .dashboard-summary {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 7px;
+    }
+
+    .dashboard-summary-card {
+        padding: 9px 5px;
+    }
+
+    .next-candidate-panel {
+        padding: 12px;
+    }
+
+    .next-candidate-title {
+        font-size: 17px;
+    }
+
+    .next-candidate-card {
+        padding: 9px 10px;
+    }
+
+    .next-candidate-name {
+        font-size: 16px;
+    }
+
+    .input-area {
+        flex-direction: column;
+    }
+
+    .input-area button {
+        width: 100%;
+    }
+
+    .buttons {
+        gap: 4px;
+    }
+
+    .buttons button {
+        padding: 8px 10px;
+        font-size: 13px;
+    }
+
+    .match-count {
+        font-size: 13px;
+    }
+
+    .lobby-person-state {
+        font-size: 11px;
+    }
 }
