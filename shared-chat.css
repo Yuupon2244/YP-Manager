@@ -117,6 +117,11 @@
     cursor: pointer;
 }
 
+.shared-chat-delete-button:hover {
+    background:
+        rgba(180, 55, 55, 0.4);
+}
+
 .shared-chat-item-deleted {
     border:
         1px dashed
@@ -189,6 +194,11 @@
     font-size: 12px;
 }
 
+#moderatorChatCount {
+    color: #aaaaaa;
+    font-size: 12px;
+}
+
 .shared-chat-send-button {
     width: auto;
     min-width: 100px;
@@ -231,6 +241,12 @@
     display: none !important;
 }
 
+
+/* ========================================
+   ★ 元ZIP準拠
+   URL参加時のコンテナ幅
+======================================== */
+
 body.participant-chat-active {
     align-items: flex-start;
 }
@@ -259,9 +275,197 @@ body.participant-chat-active #joinButton {
     color: #ffd76a;
 }
 
-#moderatorChatCount {
-    color: #aaaaaa;
-    font-size: 12px;
+
+/* ========================================
+   Owner発言
+======================================== */
+
+.shared-chat-item-owner {
+    border: 1px solid #b27be5;
+    background: #49385f;
+}
+
+.shared-chat-item-owner .shared-chat-name {
+    color: #ffd76a;
+}
+
+
+/* ========================================
+   待機部屋管理者
+======================================== */
+
+.shared-chat-item-room-admin {
+    border: 1px solid #68b7df;
+    background: #304b5c;
+}
+
+.shared-chat-item-room-admin .shared-chat-name {
+    color: #8fe3ff;
+}
+
+
+/* ========================================
+   チャット画像
+======================================== */
+
+.shared-chat-image {
+    margin-top: 8px;
+    margin-bottom: 8px;
+}
+
+.shared-chat-image img {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: 220px;
+    border-radius: 8px;
+    object-fit: contain;
+    cursor: pointer;
+}
+
+
+/* ========================================
+   画像拡大
+======================================== */
+
+.shared-chat-image-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+
+    display: flex;
+    justify-content: center;
+    align-items: center;
+
+    padding: 20px;
+
+    background: rgba(0, 0, 0, 0.82);
+}
+
+.shared-chat-image-modal-image {
+    display: block;
+
+    max-width: 92vw;
+    max-height: 88vh;
+
+    width: auto;
+    height: auto;
+
+    border-radius: 10px;
+
+    object-fit: contain;
+
+    box-shadow:
+        0 8px 30px
+        rgba(0, 0, 0, 0.45);
+}
+
+.shared-chat-image-modal-close {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+
+    width: 44px;
+    height: 44px;
+
+    padding: 0;
+
+    border: none;
+    border-radius: 50%;
+
+    background: rgba(255, 255, 255, 0.92);
+    color: #222222;
+
+    font-size: 30px;
+    line-height: 44px;
+
+    text-align: center;
+    cursor: pointer;
+}
+
+
+/* ========================================
+   画像選択・プレビュー
+======================================== */
+
+.shared-chat-input-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.shared-chat-image-input-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    padding: 8px 12px;
+
+    border-radius: 8px;
+
+    background: #3a3a3a;
+    color: #ffffff;
+
+    font-size: 13px;
+    font-weight: bold;
+
+    cursor: pointer;
+}
+
+.shared-chat-image-input-label:hover {
+    background: #474747;
+}
+
+.shared-chat-image-input {
+    display: none !important;
+}
+
+.shared-chat-image-preview {
+    position: relative;
+    display: inline-block;
+    margin-top: 8px;
+}
+
+.shared-chat-image-preview.hidden {
+    display: none !important;
+}
+
+.shared-chat-image-preview img {
+    display: block;
+
+    max-width: 220px;
+    max-height: 180px;
+
+    width: auto;
+    height: auto;
+
+    border-radius: 8px;
+
+    object-fit: contain;
+}
+
+.shared-chat-image-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+
+    width: 30px;
+    height: 30px;
+
+    padding: 0;
+
+    border: none;
+    border-radius: 50%;
+
+    background: rgba(0, 0, 0, 0.72);
+    color: #ffffff;
+
+    font-size: 20px;
+    line-height: 30px;
+
+    cursor: pointer;
 }
 
 
@@ -270,6 +474,7 @@ body.participant-chat-active #joinButton {
 ======================================== */
 
 @media (max-width: 480px) {
+
     .shared-chat-panel {
         padding: 13px;
     }
@@ -285,5 +490,15 @@ body.participant-chat-active #joinButton {
     .shared-chat-send-button {
         min-width: 88px;
         padding: 10px 14px;
+    }
+
+    .shared-chat-image img {
+        max-width: 100%;
+        max-height: 220px;
+    }
+
+    .shared-chat-image-preview img {
+        max-width: 180px;
+        max-height: 150px;
     }
 }
