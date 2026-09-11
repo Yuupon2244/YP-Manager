@@ -71,7 +71,9 @@
     <div id="message"></div>
 
 
+    <!-- ================================= -->
     <!-- URL参加者 全体共有チャット -->
+    <!-- ================================= -->
 
     <section
         id="participantChatSection"
@@ -89,12 +91,74 @@
             チャットを確認中…
         </div>
 
+
+        <!-- ================================= -->
+        <!-- チャット表示 -->
+        <!-- ================================= -->
+
         <div
             id="participantChatList"
             class="shared-chat-list"
         ></div>
 
+
+        <!-- ================================= -->
+        <!-- チャット入力 -->
+        <!-- ================================= -->
+
         <div class="shared-chat-compose">
+
+            <!-- 選択画像プレビュー -->
+
+            <div
+                id="participantChatImagePreview"
+                class="shared-chat-image-preview hidden"
+            >
+
+                <div class="shared-chat-image-preview-inner">
+
+                    <img
+                        id="participantChatImagePreviewImage"
+                        src=""
+                        alt="選択した画像"
+                    >
+
+                    <button
+                        id="participantChatImageRemoveButton"
+                        type="button"
+                        class="shared-chat-image-remove-button"
+                        aria-label="画像を削除"
+                    >
+                        ×
+                    </button>
+
+                </div>
+
+            </div>
+
+
+            <!-- 画像選択 -->
+
+            <div class="shared-chat-input-tools">
+
+                <label
+                    for="participantChatImageInput"
+                    class="shared-chat-image-button"
+                >
+                    📷 画像を選択
+                </label>
+
+                <input
+                    id="participantChatImageInput"
+                    type="file"
+                    accept="image/*"
+                    class="shared-chat-image-input"
+                >
+
+            </div>
+
+
+            <!-- 本文 -->
 
             <textarea
                 id="participantChatInput"
@@ -102,6 +166,7 @@
                 rows="2"
                 placeholder="メッセージを入力（100文字まで）"
             ></textarea>
+
 
             <div class="shared-chat-compose-bottom">
 
@@ -121,6 +186,7 @@
 
         </div>
 
+
         <div
             id="participantChatMessage"
             class="shared-chat-feedback"
@@ -132,7 +198,9 @@
 
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
 <script src="join.js"></script>
+
 <script src="participant-chat.js"></script>
 
 </body>
