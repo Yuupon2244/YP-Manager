@@ -1,547 +1,651 @@
 // ========================================
-// YP-Manager URL参加者 全体共有チャット v1.3.2
-// 画像投稿・削除反映・Owner/部屋主強調対応版
-// ========================================
-
-
-// ========================================
-// 画像設定
-// ========================================
-
-const PARTICIPANT_CHAT_IMAGE_BUCKET =
-    "participant-chat-images";
-
-const PARTICIPANT_CHAT_IMAGE_MAX_WIDTH =
-    1920;
-
-const PARTICIPANT_CHAT_IMAGE_MAX_HEIGHT =
-    1920;
-
-const PARTICIPANT_CHAT_IMAGE_QUALITY =
-    0.82;
-
-
-// ========================================
-// HTML要素
+// YP-Manager URL参加者 全体共有チャット v1.3.4
+// ・通常参加者 / チャットのみ利用者の両方に対応
+// ・画像選択 / プレビュー / 自動圧縮 / 画像送信に対応
+// ・チャット専用利用者は status="viewer"
 // ========================================
 
 const participantChatSection =
-    document.getElementById(
-        "participantChatSection"
-    );
+    document.getElementById("participantChatSection");
 
 const participantChatStatus =
-    document.getElementById(
-        "participantChatStatus"
-    );
+    document.getElementById("participantChatStatus");
 
 const participantChatList =
-    document.getElementById(
-        "participantChatList"
-    );
+    document.getElementById("participantChatList");
 
 const participantChatInput =
-    document.getElementById(
-        "participantChatInput"
-    );
+    document.getElementById("participantChatInput");
 
 const participantChatCount =
-    document.getElementById(
-        "participantChatCount"
-    );
+    document.getElementById("participantChatCount");
 
 const participantChatSendButton =
-    document.getElementById(
-        "participantChatSendButton"
-    );
+    document.getElementById("participantChatSendButton");
 
 const participantChatMessage =
-    document.getElementById(
-        "participantChatMessage"
-    );
+    document.getElementById("participantChatMessage");
 
 const participantChatImageInput =
-    document.getElementById(
-        "participantChatImageInput"
-    );
+    document.getElementById("participantChatImageInput");
 
 const participantChatImagePreview =
-    document.getElementById(
-        "participantChatImagePreview"
-    );
+    document.getElementById("participantChatImagePreview");
 
 const participantChatImagePreviewImage =
-    document.getElementById(
-        "participantChatImagePreviewImage"
-    );
+    document.getElementById("participantChatImagePreviewImage");
 
 const participantChatImageRemoveButton =
-    document.getElementById(
-        "participantChatImageRemoveButton"
-    );
+    document.getElementById("participantChatImageRemoveButton");
 
-
-// ========================================
-// 状態
-// ========================================
-
-let participantChatEntry =
-    null;
-
-let participantChatBusy =
-    false;
-
-let participantChatSignature =
-    "";
-
-let participantChatSelectedImage =
-    null;
-
-let participantChatSelectedImagePreviewUrl =
-    null;
-
-// 現在の配信の部屋主名
-let participantChatRoomModeratorNames =
-    new Set();
+let participantChatEntry = null;
+let participantChatBusy = false;
+let participantChatSignature = "";
+let participantChatSelectedImage = null;
+let participantChatPreviewUrl = "";
 
 
 // ========================================
 // 時刻表示
 // ========================================
 
-function formatParticipantChatTime(
-    value
-) {
-
+function formatParticipantChatTime(value) {
     if (!value) {
         return "";
     }
 
-    return new Date(
-        value
-    ).toLocaleTimeString(
+    return new Date(value).toLocaleTimeString(
         "ja-JP",
         {
-            hour:
-                "2-digit",
-
-            minute:
-                "2-digit"
+            hour: "2-digit",
+            minute: "2-digit"
         }
     );
 }
 
 
 // ========================================
-// 名前正規化
+// 送信結果表示
 // ========================================
 
-function normalizeParticipantChatName(
-    value
-) {
+function setParticipantChatFeedback(text, isError = false) {
+    if (!participantChatMessage) {
+        return;
+    }
 
-    return String(
-        value || ""
-    ).trim();
+    participantChatMessage.textContent = text;
+    participantChatMessage.classList.toggle("error", isError);
 }
 
 
 // ========================================
-// フィードバック
+// 画像モーダル
 // ========================================
 
-function setParticipantChatFeedback(
-    text,
-    isError = false
-) {
+function openParticipantChatImage(imageUrl) {
+    if (!imageUrl) {
+        return;
+    }
 
-    participantChatMessage.textContent =
-        text;
+    const overlay = document.createElement("div");
+    overlay.className = "shared-chat-image-modal";
 
-    participantChatMessage.classList.toggle(
-        "error",
-        isError
+    const closeButton = document.createElement("button");
+    closeButton.type = "button";
+    closeButton.className = "shared-chat-image-modal-close";
+    closeButton.textContent = "×";
+    closeButton.setAttribute("aria-label", "閉じる");
+
+    const image = document.createElement("img");
+    image.src = imageUrl;
+    image.alt = "チャット画像";
+    image.className = "shared-chat-image-modal-image";
+
+    overlay.appendChild(closeButton);
+    overlay.appendChild(image);
+    document.body.appendChild(overlay);
+
+    const close = () => overlay.remove();
+
+    closeButton.addEventListener("click", event => {
+        event.stopPropagation();
+        close();
+    });
+
+    overlay.addEventListener("click", event => {
+        if (event.target === overlay) {
+            close();
+        }
+    });
+}
+
+
+// ========================================
+// チャット描画
+// ========================================
+
+function renderParticipantChatMessages(messages) {
+    const signature = JSON.stringify(
+        messages.map(item => [
+            item.message_id,
+            item.sent_at,
+            item.is_deleted,
+            item.message_text || "",
+            item.image_url || "",
+            item.image_path || ""
+        ])
     );
-}
 
+    if (signature === participantChatSignature) {
+        return;
+    }
 
-// ========================================
-// 部屋主一覧取得
-// ========================================
+    participantChatSignature = signature;
 
-async function loadParticipantChatRoomModerators() {
+    if (!participantChatList) {
+        return;
+    }
 
-    participantChatRoomModeratorNames =
-        new Set();
+    const nearBottom =
+        participantChatList.scrollHeight -
+        participantChatList.scrollTop -
+        participantChatList.clientHeight < 80;
+
+    participantChatList.innerHTML = "";
+
+    if (messages.length === 0) {
+        const empty = document.createElement("div");
+        empty.className = "shared-chat-empty";
+        empty.textContent = "まだメッセージはありません";
+        participantChatList.appendChild(empty);
+        return;
+    }
+
+    messages.forEach(item => {
+        const card = document.createElement("div");
+
+        card.className =
+            item.sender_type === "owner"
+                ? "shared-chat-item shared-chat-item-owner"
+                : item.sender_type === "moderator"
+                    ? "shared-chat-item shared-chat-item-moderator"
+                    : "shared-chat-item";
+
+        const meta = document.createElement("div");
+        meta.className = "shared-chat-meta";
+
+        const name = document.createElement("div");
+        name.className = "shared-chat-name";
+
+        if (item.sender_type === "owner") {
+            name.textContent =
+                `👑 ${item.participant_name || "Owner"}（Owner）`;
+        } else if (item.sender_type === "moderator") {
+            name.textContent =
+                `🛡 ${item.participant_name || "Moderator"}（Moderator）`;
+        } else {
+            name.textContent =
+                item.participant_name || "名前不明";
+        }
+
+        const time = document.createElement("div");
+        time.className = "shared-chat-time";
+        time.textContent =
+            formatParticipantChatTime(item.sent_at);
+
+        meta.appendChild(name);
+        meta.appendChild(time);
+        card.appendChild(meta);
+
+        if (item.is_deleted) {
+            card.classList.add("shared-chat-item-deleted");
+
+            const deletedNote =
+                document.createElement("div");
+
+            deletedNote.className =
+                "shared-chat-deleted-note";
+
+            deletedNote.textContent =
+                item.deleted_by_name
+                    ? `削除済み（${item.deleted_by_name}）`
+                    : "削除済み";
+
+            card.appendChild(deletedNote);
+        } else {
+            if (item.image_url) {
+                const imageWrapper =
+                    document.createElement("div");
+
+                imageWrapper.className =
+                    "shared-chat-image";
+
+                const image =
+                    document.createElement("img");
+
+                image.src = item.image_url;
+                image.alt = "チャット画像";
+                image.loading = "lazy";
+                image.decoding = "async";
+
+                image.addEventListener("click", () => {
+                    openParticipantChatImage(
+                        item.image_url
+                    );
+                });
+
+                imageWrapper.appendChild(image);
+                card.appendChild(imageWrapper);
+            }
+
+            const text =
+                document.createElement("div");
+
+            text.className = "shared-chat-text";
+            text.textContent =
+                item.message_text || "";
+
+            card.appendChild(text);
+        }
+
+        participantChatList.appendChild(card);
+    });
 
     if (
-        !currentSessionId
+        nearBottom ||
+        participantChatList.scrollTop === 0
+    ) {
+        participantChatList.scrollTop =
+            participantChatList.scrollHeight;
+    }
+}
+
+
+// ========================================
+// 自分の参加 / チャット専用エントリを取得
+// ========================================
+
+async function getMyParticipantChatEntry() {
+    if (!currentSessionId) {
+        return null;
+    }
+
+    if (
+        typeof URL_USER_ID === "undefined" ||
+        !URL_USER_ID
+    ) {
+        return null;
+    }
+
+    const { data, error } =
+        await supabaseClient
+            .from("participants")
+            .select("*")
+            .eq("user_id", URL_USER_ID)
+            .eq("session_id", currentSessionId)
+            .in(
+                "status",
+                [
+                    "waiting",
+                    "playing",
+                    "viewer"
+                ]
+            )
+            .order(
+                "joined_at",
+                {
+                    ascending: false
+                }
+            )
+            .limit(1);
+
+    if (error) {
+        console.error(
+            "参加状態確認エラー:",
+            error
+        );
+        return null;
+    }
+
+    return data && data.length > 0
+        ? data[0]
+        : null;
+}
+
+
+// ========================================
+// チャット取得
+// ========================================
+
+async function loadParticipantChatMessages() {
+    if (
+        !currentSessionId ||
+        !participantChatEntry
     ) {
         return;
     }
 
-    try {
-
-        const {
-            data,
-            error
-        } =
-            await supabaseClient
-                .from("rooms")
-                .select(
-                    "moderator_name,is_active"
-                )
-                .eq(
-                    "session_id",
+    const { data, error } =
+        await supabaseClient.rpc(
+            "get_participant_messages",
+            {
+                p_session_id:
                     currentSessionId
-                )
-                .eq(
-                    "is_active",
-                    true
-                );
+            }
+        );
 
-        if (
-            error
-        ) {
-
-            console.warn(
-                "部屋主取得エラー:",
-                error
-            );
-
-            return;
-        }
-
-        if (
-            Array.isArray(data)
-        ) {
-
-            data.forEach(
-                room => {
-
-                    const name =
-                        normalizeParticipantChatName(
-                            room?.moderator_name
-                        );
-
-                    if (
-                        name
-                    ) {
-
-                        participantChatRoomModeratorNames.add(
-                            name
-                        );
-                    }
-                }
-            );
-        }
-
-    } catch (
-        error
-    ) {
-
-        console.warn(
-            "部屋主取得エラー:",
+    if (error) {
+        console.error(
+            "チャット取得エラー:",
             error
         );
+
+        if (participantChatStatus) {
+            participantChatStatus.textContent =
+                "チャットを取得できませんでした";
+        }
+
+        return;
     }
+
+    const messages =
+        Array.isArray(data)
+            ? data
+            : [];
+
+    if (participantChatStatus) {
+        participantChatStatus.textContent =
+            `現在の配信・共有メッセージ ${messages.length}件`;
+    }
+
+    renderParticipantChatMessages(messages);
 }
 
 
 // ========================================
-// 部屋主判定
+// チャット利用可否
 // ========================================
 
-function isParticipantChatRoomModerator(
-    name
-) {
+async function refreshParticipantChatAccess() {
+    if (!currentSessionId) {
+        participantChatEntry = null;
 
-    const normalized =
-        normalizeParticipantChatName(
-            name
+        participantChatSection?.classList.add(
+            "hidden"
         );
 
-    if (
-        !normalized
-    ) {
-        return false;
+        document.body.classList.remove(
+            "participant-chat-active"
+        );
+
+        return;
     }
 
-    return participantChatRoomModeratorNames.has(
-        normalized
+    const entry =
+        await getMyParticipantChatEntry();
+
+    if (!entry) {
+        participantChatEntry = null;
+
+        participantChatSection?.classList.add(
+            "hidden"
+        );
+
+        document.body.classList.remove(
+            "participant-chat-active"
+        );
+
+        return;
+    }
+
+    participantChatEntry = entry;
+
+    participantChatSection?.classList.remove(
+        "hidden"
+    );
+
+    document.body.classList.add(
+        "participant-chat-active"
+    );
+
+    if (participantChatInput) {
+        participantChatInput.disabled = false;
+    }
+
+    if (participantChatSendButton) {
+        participantChatSendButton.disabled = false;
+    }
+
+    if (participantChatImageInput) {
+        participantChatImageInput.disabled = false;
+    }
+
+    await loadParticipantChatMessages();
+}
+
+
+// ========================================
+// 画像リセット
+// ========================================
+
+function clearParticipantChatImage() {
+    participantChatSelectedImage = null;
+
+    if (participantChatPreviewUrl) {
+        URL.revokeObjectURL(
+            participantChatPreviewUrl
+        );
+
+        participantChatPreviewUrl = "";
+    }
+
+    if (participantChatImageInput) {
+        participantChatImageInput.value = "";
+    }
+
+    if (participantChatImagePreviewImage) {
+        participantChatImagePreviewImage.removeAttribute(
+            "src"
+        );
+    }
+
+    participantChatImagePreview?.classList.add(
+        "hidden"
     );
 }
 
 
 // ========================================
-// 選択画像クリア
+// 画像読み込み
 // ========================================
 
-function clearParticipantChatSelectedImage() {
+function loadImageElement(file) {
+    return new Promise((resolve, reject) => {
+        const objectUrl =
+            URL.createObjectURL(file);
 
-    participantChatSelectedImage =
-        null;
+        const image = new Image();
 
-    if (
-        participantChatSelectedImagePreviewUrl
-    ) {
+        image.onload = () => {
+            URL.revokeObjectURL(objectUrl);
+            resolve(image);
+        };
 
-        URL.revokeObjectURL(
-            participantChatSelectedImagePreviewUrl
-        );
+        image.onerror = error => {
+            URL.revokeObjectURL(objectUrl);
+            reject(error);
+        };
 
-        participantChatSelectedImagePreviewUrl =
-            null;
-    }
-
-    if (
-        participantChatImagePreviewImage
-    ) {
-
-        participantChatImagePreviewImage.src =
-            "";
-    }
-
-    if (
-        participantChatImagePreview
-    ) {
-
-        participantChatImagePreview.classList.add(
-            "hidden"
-        );
-    }
-
-    if (
-        participantChatImageInput
-    ) {
-
-        participantChatImageInput.value =
-            "";
-    }
+        image.src = objectUrl;
+    });
 }
 
 
 // ========================================
-// 画像選択
+// 自動圧縮
 // ========================================
 
-function handleParticipantChatImageSelected(
-    file
-) {
+async function compressParticipantChatImage(file) {
+    const image =
+        await loadImageElement(file);
 
-    clearParticipantChatSelectedImage();
+    const MAX_SIZE = 1920;
 
+    const originalWidth =
+        image.naturalWidth ||
+        image.width;
+
+    const originalHeight =
+        image.naturalHeight ||
+        image.height;
+
+    if (
+        !originalWidth ||
+        !originalHeight
+    ) {
+        throw new Error(
+            "画像を読み込めませんでした。"
+        );
+    }
+
+    const scale =
+        Math.min(
+            1,
+            MAX_SIZE / originalWidth,
+            MAX_SIZE / originalHeight
+        );
+
+    const width =
+        Math.max(
+            1,
+            Math.round(
+                originalWidth * scale
+            )
+        );
+
+    const height =
+        Math.max(
+            1,
+            Math.round(
+                originalHeight * scale
+            )
+        );
+
+    const canvas =
+        document.createElement("canvas");
+
+    canvas.width = width;
+    canvas.height = height;
+
+    const context =
+        canvas.getContext("2d");
+
+    if (!context) {
+        throw new Error(
+            "画像処理を開始できませんでした。"
+        );
+    }
+
+    context.drawImage(
+        image,
+        0,
+        0,
+        width,
+        height
+    );
+
+    const blob =
+        await new Promise(resolve => {
+            canvas.toBlob(
+                result => resolve(result),
+                "image/jpeg",
+                0.82
+            );
+        });
+
+    if (!blob) {
+        throw new Error(
+            "画像の圧縮に失敗しました。"
+        );
+    }
+
+    return new File(
+        [blob],
+        "chat-image.jpg",
+        {
+            type: "image/jpeg",
+            lastModified: Date.now()
+        }
+    );
+}
+
+
+async function handleParticipantChatImageSelected(file) {
     if (!file) {
         return;
     }
 
     if (
-        !file.type ||
-        !file.type.startsWith(
-            "image/"
-        )
+        !String(file.type || "")
+            .startsWith("image/")
     ) {
-
         setParticipantChatFeedback(
             "画像ファイルを選択してください。",
             true
         );
 
+        clearParticipantChatImage();
         return;
     }
 
-    participantChatSelectedImage =
-        file;
-
-    participantChatSelectedImagePreviewUrl =
-        URL.createObjectURL(
-            file
+    try {
+        setParticipantChatFeedback(
+            "画像を準備しています…"
         );
 
-    if (
-        participantChatImagePreviewImage
-    ) {
+        const compressed =
+            await compressParticipantChatImage(
+                file
+            );
 
-        participantChatImagePreviewImage.src =
-            participantChatSelectedImagePreviewUrl;
-    }
+        participantChatSelectedImage =
+            compressed;
 
-    if (
-        participantChatImagePreview
-    ) {
+        if (participantChatPreviewUrl) {
+            URL.revokeObjectURL(
+                participantChatPreviewUrl
+            );
+        }
 
-        participantChatImagePreview.classList.remove(
+        participantChatPreviewUrl =
+            URL.createObjectURL(
+                compressed
+            );
+
+        if (
+            participantChatImagePreviewImage
+        ) {
+            participantChatImagePreviewImage.src =
+                participantChatPreviewUrl;
+        }
+
+        participantChatImagePreview?.classList.remove(
             "hidden"
         );
-    }
 
-    setParticipantChatFeedback("");
-}
-
-
-// ========================================
-// 画像圧縮
-// ========================================
-
-async function compressParticipantChatImage(
-    file
-) {
-
-    const objectUrl =
-        URL.createObjectURL(
-            file
+        setParticipantChatFeedback("");
+    } catch (error) {
+        console.error(
+            "画像準備エラー:",
+            error
         );
 
-    try {
+        clearParticipantChatImage();
 
-        const image =
-            await new Promise(
-                (
-                    resolve,
-                    reject
-                ) => {
-
-                    const img =
-                        new Image();
-
-                    img.onload =
-                        () => resolve(img);
-
-                    img.onerror =
-                        () =>
-                            reject(
-                                new Error(
-                                    "画像を読み込めませんでした。"
-                                )
-                            );
-
-                    img.src =
-                        objectUrl;
-                }
-            );
-
-        let width =
-            image.naturalWidth ||
-            image.width;
-
-        let height =
-            image.naturalHeight ||
-            image.height;
-
-        const scale =
-            Math.min(
-                1,
-                PARTICIPANT_CHAT_IMAGE_MAX_WIDTH /
-                    width,
-                PARTICIPANT_CHAT_IMAGE_MAX_HEIGHT /
-                    height
-            );
-
-        width =
-            Math.max(
-                1,
-                Math.round(
-                    width * scale
-                )
-            );
-
-        height =
-            Math.max(
-                1,
-                Math.round(
-                    height * scale
-                )
-            );
-
-        const canvas =
-            document.createElement(
-                "canvas"
-            );
-
-        canvas.width =
-            width;
-
-        canvas.height =
-            height;
-
-        const context =
-            canvas.getContext(
-                "2d"
-            );
-
-        if (!context) {
-
-            throw new Error(
-                "画像処理を開始できませんでした。"
-            );
-        }
-
-        context.drawImage(
-            image,
-            0,
-            0,
-            width,
-            height
-        );
-
-        const webpBlob =
-            await new Promise(
-                resolve => {
-
-                    canvas.toBlob(
-                        resolve,
-                        "image/webp",
-                        PARTICIPANT_CHAT_IMAGE_QUALITY
-                    );
-                }
-            );
-
-        if (
-            webpBlob
-        ) {
-
-            return {
-                blob:
-                    webpBlob,
-
-                extension:
-                    "webp"
-            };
-        }
-
-        const jpegBlob =
-            await new Promise(
-                resolve => {
-
-                    canvas.toBlob(
-                        resolve,
-                        "image/jpeg",
-                        PARTICIPANT_CHAT_IMAGE_QUALITY
-                    );
-                }
-            );
-
-        if (
-            jpegBlob
-        ) {
-
-            return {
-                blob:
-                    jpegBlob,
-
-                extension:
-                    "jpg"
-            };
-        }
-
-        throw new Error(
-            "画像の圧縮に失敗しました。"
-        );
-
-    } finally {
-
-        URL.revokeObjectURL(
-            objectUrl
+        setParticipantChatFeedback(
+            error?.message ||
+                "画像を準備できませんでした。",
+            true
         );
     }
 }
@@ -551,696 +655,44 @@ async function compressParticipantChatImage(
 // 画像アップロード
 // ========================================
 
-async function uploadParticipantChatImage(
-    file
-) {
-
-    const compressed =
-        await compressParticipantChatImage(
-            file
-        );
-
+async function uploadParticipantChatImage(file) {
     const path =
-        `${currentSessionId}/${participantChatEntry.id}/${crypto.randomUUID()}.${compressed.extension}`;
+        `${currentSessionId}/${participantChatEntry.id}/${crypto.randomUUID()}.jpg`;
 
-    const contentType =
-        compressed.extension ===
-        "webp"
-            ? "image/webp"
-            : "image/jpeg";
-
-    const {
-        error:
-            uploadError
-    } =
+    const { error } =
         await supabaseClient
             .storage
-            .from(
-                PARTICIPANT_CHAT_IMAGE_BUCKET
-            )
+            .from("participant-chat-images")
             .upload(
                 path,
-                compressed.blob,
+                file,
                 {
-                    contentType:
-                        contentType,
-
-                    cacheControl:
-                        "3600",
-
-                    upsert:
-                        false
+                    contentType: "image/jpeg",
+                    cacheControl: "31536000",
+                    upsert: false
                 }
             );
 
-    if (
-        uploadError
-    ) {
-
-        throw uploadError;
+    if (error) {
+        throw error;
     }
 
-    const {
-        data:
-            publicUrlData
-    } =
+    const { data } =
         supabaseClient
             .storage
-            .from(
-                PARTICIPANT_CHAT_IMAGE_BUCKET
-            )
-            .getPublicUrl(
-                path
-            );
+            .from("participant-chat-images")
+            .getPublicUrl(path);
 
-    const publicUrl =
-        publicUrlData?.publicUrl;
-
-    if (
-        !publicUrl
-    ) {
-
+    if (!data?.publicUrl) {
         throw new Error(
             "画像URLを取得できませんでした。"
         );
     }
 
     return {
-        url:
-            publicUrl,
-
-        path:
-            path
+        path,
+        url: data.publicUrl
     };
-}
-
-
-// ========================================
-// 画像拡大
-// ========================================
-
-function openParticipantChatImage(
-    imageUrl
-) {
-
-    if (!imageUrl) {
-        return;
-    }
-
-    const overlay =
-        document.createElement(
-            "div"
-        );
-
-    overlay.className =
-        "shared-chat-image-modal";
-
-    const closeButton =
-        document.createElement(
-            "button"
-        );
-
-    closeButton.type =
-        "button";
-
-    closeButton.className =
-        "shared-chat-image-modal-close";
-
-    closeButton.textContent =
-        "×";
-
-    closeButton.setAttribute(
-        "aria-label",
-        "閉じる"
-    );
-
-    const image =
-        document.createElement(
-            "img"
-        );
-
-    image.src =
-        imageUrl;
-
-    image.alt =
-        "チャット画像";
-
-    image.className =
-        "shared-chat-image-modal-image";
-
-    overlay.appendChild(
-        closeButton
-    );
-
-    overlay.appendChild(
-        image
-    );
-
-    document.body.appendChild(
-        overlay
-    );
-
-    const close =
-        () => overlay.remove();
-
-    closeButton.addEventListener(
-        "click",
-        event => {
-
-            event.stopPropagation();
-
-            close();
-        }
-    );
-
-    overlay.addEventListener(
-        "click",
-        event => {
-
-            if (
-                event.target ===
-                overlay
-            ) {
-
-                close();
-            }
-        }
-    );
-
-    const handleEscape =
-        event => {
-
-            if (
-                event.key ===
-                "Escape"
-            ) {
-
-                close();
-
-                document.removeEventListener(
-                    "keydown",
-                    handleEscape
-                );
-            }
-        };
-
-    document.addEventListener(
-        "keydown",
-        handleEscape
-    );
-}
-
-
-// ========================================
-// メッセージ描画
-// ========================================
-
-function renderParticipantChatMessages(
-    messages
-) {
-
-    const signature =
-        JSON.stringify(
-            messages.map(
-                item => [
-                    item.message_id,
-                    item.sent_at,
-                    item.is_deleted,
-                    item.deleted_at,
-                    item.deleted_by_type,
-                    item.deleted_by_name,
-                    item.sender_type,
-                    item.participant_name ||
-                        "",
-                    item.message_text ||
-                        "",
-                    item.image_url ||
-                        "",
-                    item.image_path ||
-                        ""
-                ]
-            )
-        );
-
-    if (
-        signature ===
-        participantChatSignature
-    ) {
-        return;
-    }
-
-    participantChatSignature =
-        signature;
-
-    const nearBottom =
-        participantChatList.scrollHeight -
-        participantChatList.scrollTop -
-        participantChatList.clientHeight <
-        80;
-
-    participantChatList.innerHTML =
-        "";
-
-    if (
-        messages.length ===
-        0
-    ) {
-
-        const empty =
-            document.createElement(
-                "div"
-            );
-
-        empty.className =
-            "shared-chat-empty";
-
-        empty.textContent =
-            "まだメッセージはありません";
-
-        participantChatList.appendChild(
-            empty
-        );
-
-        return;
-    }
-
-
-    messages.forEach(
-        item => {
-
-            const senderName =
-                normalizeParticipantChatName(
-                    item.participant_name
-                );
-
-            const isOwner =
-                item.sender_type ===
-                "owner";
-
-            const isModerator =
-                item.sender_type ===
-                "moderator";
-
-            const isRoomModerator =
-                isModerator &&
-                isParticipantChatRoomModerator(
-                    senderName
-                );
-
-
-            const card =
-                document.createElement(
-                    "div"
-                );
-
-
-            // ========================================
-            // カードの色分け
-            // ========================================
-
-            if (
-                isOwner
-            ) {
-
-                card.className =
-                    "shared-chat-item shared-chat-item-owner";
-
-            } else if (
-                isRoomModerator
-            ) {
-
-                card.className =
-                    "shared-chat-item shared-chat-item-room-admin";
-
-            } else if (
-                isModerator
-            ) {
-
-                card.className =
-                    "shared-chat-item shared-chat-item-moderator";
-
-            } else {
-
-                card.className =
-                    "shared-chat-item";
-            }
-
-
-            const meta =
-                document.createElement(
-                    "div"
-                );
-
-            meta.className =
-                "shared-chat-meta";
-
-
-            const name =
-                document.createElement(
-                    "div"
-                );
-
-            name.className =
-                "shared-chat-name";
-
-
-            // ========================================
-            // 名前
-            // ========================================
-
-            if (
-                isOwner
-            ) {
-
-                name.textContent =
-                    `👑 ${
-                        senderName ||
-                        "Owner"
-                    }（Owner）`;
-
-            } else if (
-                isRoomModerator
-            ) {
-
-                name.textContent =
-                    `🏠 ${
-                        senderName ||
-                        "管理者"
-                    }（部屋主）`;
-
-            } else if (
-                isModerator
-            ) {
-
-                name.textContent =
-                    `🛡 ${
-                        senderName ||
-                        "管理者"
-                    }（Moderator）`;
-
-            } else {
-
-                name.textContent =
-                    senderName ||
-                    "名前不明";
-            }
-
-
-            const time =
-                document.createElement(
-                    "div"
-                );
-
-            time.className =
-                "shared-chat-time";
-
-            time.textContent =
-                formatParticipantChatTime(
-                    item.sent_at
-                );
-
-
-            meta.appendChild(
-                name
-            );
-
-            meta.appendChild(
-                time
-            );
-
-
-            card.appendChild(
-                meta
-            );
-
-
-            // ========================================
-            // 削除済み
-            // ========================================
-
-            if (
-                item.is_deleted
-            ) {
-
-                const deleted =
-                    document.createElement(
-                        "div"
-                    );
-
-                deleted.className =
-                    "shared-chat-text";
-
-                deleted.textContent =
-                    "このメッセージは削除されました";
-
-                card.appendChild(
-                    deleted
-                );
-
-                participantChatList.appendChild(
-                    card
-                );
-
-                return;
-            }
-
-
-            // ========================================
-            // 画像
-            // ========================================
-
-            if (
-                item.image_url
-            ) {
-
-                const imageWrapper =
-                    document.createElement(
-                        "div"
-                    );
-
-                imageWrapper.className =
-                    "shared-chat-image";
-
-
-                const image =
-                    document.createElement(
-                        "img"
-                    );
-
-                image.src =
-                    item.image_url;
-
-                image.alt =
-                    "チャット画像";
-
-                image.loading =
-                    "lazy";
-
-                image.decoding =
-                    "async";
-
-
-                image.addEventListener(
-                    "click",
-                    () => {
-
-                        openParticipantChatImage(
-                            item.image_url
-                        );
-                    }
-                );
-
-
-                imageWrapper.appendChild(
-                    image
-                );
-
-                card.appendChild(
-                    imageWrapper
-                );
-            }
-
-
-            // ========================================
-            // 本文
-            // ========================================
-
-            if (
-                item.message_text
-            ) {
-
-                const text =
-                    document.createElement(
-                        "div"
-                    );
-
-                text.className =
-                    "shared-chat-text";
-
-                text.textContent =
-                    item.message_text;
-
-                card.appendChild(
-                    text
-                );
-            }
-
-
-            participantChatList.appendChild(
-                card
-            );
-        }
-    );
-
-
-    if (
-        nearBottom ||
-        participantChatList.scrollTop === 0
-    ) {
-
-        participantChatList.scrollTop =
-            participantChatList.scrollHeight;
-    }
-}
-
-
-// ========================================
-// チャット取得
-// ========================================
-
-async function loadParticipantChatMessages() {
-
-    if (
-        !currentSessionId ||
-        !participantChatEntry
-    ) {
-        return;
-    }
-
-
-    const {
-        data,
-        error
-    } =
-        await supabaseClient
-            .rpc(
-                "get_participant_messages",
-                {
-                    p_session_id:
-                        currentSessionId
-                }
-            );
-
-
-    if (
-        error
-    ) {
-
-        console.error(
-            "チャット取得エラー:",
-            error
-        );
-
-        participantChatStatus.textContent =
-            "チャットを取得できませんでした";
-
-        return;
-    }
-
-
-    const messages =
-        Array.isArray(
-            data
-        )
-            ? data
-            : [];
-
-
-    participantChatStatus.textContent =
-        `現在の配信・共有メッセージ ${messages.length}件`;
-
-
-    renderParticipantChatMessages(
-        messages
-    );
-}
-
-
-// ========================================
-// URL参加状態
-// ========================================
-
-async function refreshParticipantChatAccess() {
-
-    if (
-        !currentSessionId
-    ) {
-
-        participantChatEntry =
-            null;
-
-        participantChatSection.classList.add(
-            "hidden"
-        );
-
-        document.body.classList.remove(
-            "participant-chat-active"
-        );
-
-        return;
-    }
-
-
-    // 部屋主情報を更新
-    await loadParticipantChatRoomModerators();
-
-
-    const entry =
-        await getMyActiveEntry();
-
-
-    if (
-        !entry
-    ) {
-
-        participantChatEntry =
-            null;
-
-        participantChatSection.classList.add(
-            "hidden"
-        );
-
-        document.body.classList.remove(
-            "participant-chat-active"
-        );
-
-        return;
-    }
-
-
-    participantChatEntry =
-        entry;
-
-
-    participantChatSection.classList.remove(
-        "hidden"
-    );
-
-
-    document.body.classList.add(
-        "participant-chat-active"
-    );
-
-
-    participantChatInput.disabled =
-        false;
-
-
-    participantChatSendButton.disabled =
-        false;
-
-
-    await loadParticipantChatMessages();
 }
 
 
@@ -1249,7 +701,6 @@ async function refreshParticipantChatAccess() {
 // ========================================
 
 async function sendParticipantChatMessage() {
-
     if (
         participantChatBusy ||
         !participantChatEntry
@@ -1257,36 +708,23 @@ async function sendParticipantChatMessage() {
         return;
     }
 
-
     const text =
-        participantChatInput
-            .value
-            .trim();
+        participantChatInput?.value.trim() ||
+        "";
 
+    const hasImage =
+        !!participantChatSelectedImage;
 
-    const selectedImage =
-        participantChatSelectedImage;
-
-
-    if (
-        !text &&
-        !selectedImage
-    ) {
-
+    if (!text && !hasImage) {
         setParticipantChatFeedback(
-            "メッセージまたは画像を入力してください。",
+            "メッセージまたは画像を選択してください。",
             true
         );
 
         return;
     }
 
-
-    if (
-        text.length >
-        100
-    ) {
-
+    if (text.length > 100) {
         setParticipantChatFeedback(
             "100文字以内で入力してください。",
             true
@@ -1295,336 +733,202 @@ async function sendParticipantChatMessage() {
         return;
     }
 
+    participantChatBusy = true;
 
-    participantChatBusy =
-        true;
-
-
-    participantChatInput.disabled =
-        true;
-
-
-    if (
-        participantChatImageInput
-    ) {
-
-        participantChatImageInput.disabled =
-            true;
+    if (participantChatInput) {
+        participantChatInput.disabled = true;
     }
 
-
-    if (
-        participantChatImageRemoveButton
-    ) {
-
-        participantChatImageRemoveButton.disabled =
-            true;
+    if (participantChatImageInput) {
+        participantChatImageInput.disabled = true;
     }
 
+    if (participantChatSendButton) {
+        participantChatSendButton.disabled = true;
+        participantChatSendButton.textContent =
+            "送信中…";
+    }
 
-    participantChatSendButton.disabled =
-        true;
-
-
-    participantChatSendButton.textContent =
-        "送信中…";
-
-
-    setParticipantChatFeedback(
-        ""
-    );
-
+    setParticipantChatFeedback("");
 
     try {
-
         const token =
-            getCancelToken(
-                participantChatEntry.id
-            ) ||
-            await ensureCancelToken(
-                participantChatEntry
-            );
+            typeof getCancelToken ===
+            "function"
+                ? getCancelToken(
+                    participantChatEntry.id
+                ) ||
+                  await ensureCancelToken(
+                      participantChatEntry
+                  )
+                : null;
 
-
-        if (
-            !token
-        ) {
-
+        if (!token) {
             throw new Error(
                 "本人確認情報を取得できませんでした。"
             );
         }
 
+        let imageUrl = null;
+        let imagePath = null;
 
-        let imageUrl =
-            null;
-
-        let imagePath =
-            null;
-
-
-        if (
-            selectedImage
-        ) {
-
+        if (participantChatSelectedImage) {
             setParticipantChatFeedback(
-                "画像を圧縮・アップロード中…"
+                "画像をアップロードしています…"
             );
-
 
             const uploaded =
                 await uploadParticipantChatImage(
-                    selectedImage
+                    participantChatSelectedImage
                 );
 
-
-            imageUrl =
-                uploaded.url;
-
-            imagePath =
-                uploaded.path;
+            imageUrl = uploaded.url;
+            imagePath = uploaded.path;
         }
 
+        setParticipantChatFeedback(
+            "送信しています…"
+        );
 
-        let error =
-            null;
+        const { error } =
+            await supabaseClient.rpc(
+                "send_participant_message_with_image",
+                {
+                    p_participant_id:
+                        participantChatEntry.id,
 
+                    p_cancel_token:
+                        token,
 
-        if (
-            imageUrl
-        ) {
+                    p_message:
+                        text,
 
-            const result =
-                await supabaseClient
-                    .rpc(
-                        "send_participant_message_with_image",
-                        {
-                            p_participant_id:
-                                participantChatEntry.id,
+                    p_image_url:
+                        imageUrl,
 
-                            p_cancel_token:
-                                token,
+                    p_image_path:
+                        imagePath
+                }
+            );
 
-                            p_message:
-                                text,
-
-                            p_image_url:
-                                imageUrl,
-
-                            p_image_path:
-                                imagePath
-                        }
-                    );
-
-
-            error =
-                result.error;
-
-        } else {
-
-            const result =
-                await supabaseClient
-                    .rpc(
-                        "send_participant_message",
-                        {
-                            p_participant_id:
-                                participantChatEntry.id,
-
-                            p_cancel_token:
-                                token,
-
-                            p_message:
-                                text
-                        }
-                    );
-
-
-            error =
-                result.error;
-        }
-
-
-        if (
-            error
-        ) {
-
+        if (error) {
             throw error;
         }
 
+        if (participantChatInput) {
+            participantChatInput.value = "";
+        }
 
-        participantChatInput.value =
-            "";
+        if (participantChatCount) {
+            participantChatCount.textContent =
+                "0 / 100";
+        }
 
-
-        participantChatCount.textContent =
-            "0 / 100";
-
-
-        clearParticipantChatSelectedImage();
-
+        clearParticipantChatImage();
 
         setParticipantChatFeedback(
             "送信しました。5秒後に次を送れます。"
         );
 
-
         await loadParticipantChatMessages();
-
 
         setTimeout(
             () =>
-                setParticipantChatFeedback(
-                    ""
-                ),
+                setParticipantChatFeedback(""),
             5000
         );
-
-
-    } catch (
-        error
-    ) {
-
+    } catch (error) {
         console.error(
             "チャット送信エラー:",
             error
         );
 
-
         setParticipantChatFeedback(
             error?.message ||
-            "送信できませんでした。",
+                "送信できませんでした。",
             true
         );
-
-
     } finally {
+        participantChatBusy = false;
 
-        participantChatBusy =
-            false;
+        if (participantChatInput) {
+            participantChatInput.disabled =
+                false;
+        }
 
-
-        participantChatInput.disabled =
-            false;
-
-
-        if (
-            participantChatImageInput
-        ) {
-
+        if (participantChatImageInput) {
             participantChatImageInput.disabled =
                 false;
         }
 
-
-        if (
-            participantChatImageRemoveButton
-        ) {
-
-            participantChatImageRemoveButton.disabled =
+        if (participantChatSendButton) {
+            participantChatSendButton.disabled =
                 false;
+
+            participantChatSendButton.textContent =
+                "送信";
         }
-
-
-        participantChatSendButton.disabled =
-            false;
-
-
-        participantChatSendButton.textContent =
-            "送信";
-
-
-        participantChatInput.focus();
     }
 }
 
 
 // ========================================
-// 本文入力
+// イベント
 // ========================================
 
-participantChatInput.addEventListener(
+participantChatInput?.addEventListener(
     "input",
     () => {
-
-        participantChatCount.textContent =
-            `${participantChatInput.value.length} / 100`;
+        if (participantChatCount) {
+            participantChatCount.textContent =
+                `${participantChatInput.value.length} / 100`;
+        }
     }
 );
 
 
-// ========================================
-// Enter送信
-// ========================================
-
-participantChatInput.addEventListener(
+participantChatInput?.addEventListener(
     "keydown",
     event => {
-
         if (
-            event.key ===
-                "Enter" &&
+            event.key === "Enter" &&
             !event.shiftKey
         ) {
-
             event.preventDefault();
-
             sendParticipantChatMessage();
         }
     }
 );
 
 
-// ========================================
-// 送信ボタン
-// ========================================
-
-participantChatSendButton.addEventListener(
+participantChatSendButton?.addEventListener(
     "click",
     sendParticipantChatMessage
 );
 
 
-// ========================================
-// 画像選択
-// ========================================
+participantChatImageInput?.addEventListener(
+    "change",
+    async event => {
+        const file =
+            event.target?.files?.[0] ||
+            null;
 
-if (
-    participantChatImageInput
-) {
+        await handleParticipantChatImageSelected(
+            file
+        );
+    }
+);
 
-    participantChatImageInput.addEventListener(
-        "change",
-        () => {
 
-            const file =
-                participantChatImageInput.files?.[0] ||
-                null;
-
-            handleParticipantChatImageSelected(
-                file
-            );
-        }
-    );
-}
+participantChatImageRemoveButton?.addEventListener(
+    "click",
+    clearParticipantChatImage
+);
 
 
 // ========================================
-// 画像取消
-// ========================================
-
-if (
-    participantChatImageRemoveButton
-) {
-
-    participantChatImageRemoveButton.addEventListener(
-        "click",
-        clearParticipantChatSelectedImage
-    );
-}
-
-
-// ========================================
-// 起動
+// 起動・3秒更新
 // ========================================
 
 setTimeout(
@@ -1632,14 +936,8 @@ setTimeout(
     700
 );
 
-
-// ========================================
-// 3秒ごとに更新
-// ========================================
-
 setInterval(
     async () => {
-
         if (
             document.hidden ||
             participantChatBusy
@@ -1648,7 +946,6 @@ setInterval(
         }
 
         await refreshParticipantChatAccess();
-
     },
     3000
 );
