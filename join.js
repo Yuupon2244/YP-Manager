@@ -1021,10 +1021,12 @@ async function joinQueue() {
         );
 
 
-        showMessage(
-            "参加できませんでした。",
-            "error"
-        );
+showMessage(
+    `参加できませんでした。<br>
+    code: ${error?.code || "なし"}<br>
+    ${error?.message || "原因不明のエラー"}`,
+    "error"
+);
 
 
         showJoinState();
@@ -1297,10 +1299,12 @@ async function joinAsViewer() {
         );
 
 
-        showMessage(
-            "チャットのみ利用に登録できませんでした。",
-            "error"
-        );
+showMessage(
+    `チャットのみ利用に登録できませんでした。<br>
+    code: ${error?.code || "なし"}<br>
+    ${error?.message || "原因不明のエラー"}`,
+    "error"
+);
 
 
         showJoinState();
