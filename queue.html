@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>YP-Manager 順番待ちリスト</title>
+
+<style>
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    background: transparent !important;
+}
+
+#stage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    container-type: inline-size;
+}
+
+.slot-name {
+    position: absolute;
+    transform: translateY(-50%);
+    color: #ffffff;
+    font-family: "Noto Sans JP", "Meiryo", sans-serif;
+    font-size: clamp(20px, 3.15cqw, 38px);
+    font-weight: 900;
+    line-height: 1.1;
+    -webkit-text-stroke: 0.5px #111111;
+    text-shadow:
+        1px 1px 2px #000000,
+        -1px -1px 2px #000000;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+
+.left {
+    left: 12.3%;
+    width: 34%;
+    text-align: left;
+}
+
+.right {
+    left: 59.8%;
+    width: 33.5%;
+    text-align: left;
+}
+
+.row-1 { top: 80.1%; }
+.row-2 { top: 85.0%; }
+.row-3 { top: 90.0%; }
+.row-4 { top: 95.0%; }
+</style>
+</head>
+
+<body>
+
+<div id="stage">
+    <span id="slot1" class="slot-name left row-1"></span>
+    <span id="slot2" class="slot-name left row-2"></span>
+    <span id="slot3" class="slot-name left row-3"></span>
+    <span id="slot4" class="slot-name left row-4"></span>
+
+    <span id="slot5" class="slot-name right row-1"></span>
+    <span id="slot6" class="slot-name right row-2"></span>
+    <span id="slot7" class="slot-name right row-3"></span>
+    <span id="slot8" class="slot-name right row-4"></span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<script>
+"use strict";
+
+const SUPABASE_URL =
+    "https://ilmiebokwfccybrtduxy.supabase.co";
+
+const SUPABASE_KEY =
+    "sb_publishable_tl-vkXmtiYn_f1VtPy689A_dwKCdYg5";
+
+const supabaseClient =
+    window.supabase.createClient(
+        SUPABASE_URL,
+        SUPABASE_KEY
+    );
+
+const stage =
+    document.getElementById("stage");
+
+const slotElements =
+    Array.from(
+        { length: 8 },
+        (_, index) =>
+            document.getElementById(
+                `slot${index + 1}`
+            )
+    );
+
+let polling = false;
+
+
+/* =====================================
+   表示をクリア
+===================================== */
+
+function clearNames() {
+    for (const element of slotElements) {
+        element.textContent = "";
+        element.title = "";
+    }
+}
+
+
+/* =====================================
+   チャット専用利用者を除外
+   YP-Manager既存ルールに合わせる
+===================================== */
+
+function isChatOnlyPerson(person) {
+    return (
+        person?.chat_only === true ||
+        person?.status === "chat_only" ||
+        person?.lobby_state === "chat_only" ||
+        person?.source === "chat" ||
+        person?.note === "chat_only" ||
+        person?.note === "viewer"
+    );
+}
+
+
+/* =====================================
+   配信画面に表示する名前を選ぶ
+
+   URL登録   → name
+   手動追加  → name
+   コメント  → game_name
+
+   コメント参加者のゲーム名が未登録なら
+   YouTubeの表示名は代用しない
+===================================== */
+
+function getQueueDisplayName(person) {
+    if (!person) {
+        return "";
+    }
+
+    const source =
+        String(person.source || "").toLowerCase();
+
+    if (
+        source === "url" ||
+        source === "manual" ||
+        source === ""
+    ) {
+        return String(
+            person.name || ""
+        ).trim();
+    }
+
+    return String(
+        person.game_name || ""
+    ).trim();
+}
+
+
+/* =====================================
+   YP-Managerと同じ待機順で並べ替える
+===================================== */
+
+function isFirstParticipationPending(person) {
+    return (
+        person.first_participation_pending === true ||
+        (
+            person.first_participation_pending == null &&
+            person.note === "initial"
+        )
+    );
+}
+
+function sortWaitingPeople(people) {
+    return people.sort((a, b) => {
+        const aNew =
+            isFirstParticipationPending(a) ? 0 : 1;
+
+        const bNew =
+            isFirstParticipationPending(b) ? 0 : 1;
+
+        if (aNew !== bNew) {
+            return aNew - bNew;
+        }
+
+        const ao = Number(a.display_order);
+        const bo = Number(b.display_order);
+
+        const aValid = Number.isFinite(ao);
+        const bValid = Number.isFinite(bo);
+
+        if (aValid && bValid && ao !== bo) {
+            return ao - bo;
+        }
+
+        if (aValid && !bValid) {
+            return -1;
+        }
+
+        if (!aValid && bValid) {
+            return 1;
+        }
+
+        return String(a.joined_at || "").localeCompare(
+            String(b.joined_at || "")
+        );
+    });
+}
+
+
+/* =====================================
+   現在の配信IDを取得
+===================================== */
+
+async function getCurrentSessionId() {
+    const { data, error } =
+        await supabaseClient
+            .from("app_settings")
+            .select("value")
+            .eq("key", "current_session_id")
+            .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    if (!data || !data.value) {
+        return null;
+    }
+
+    return String(data.value).trim();
+}
+
+
+/* =====================================
+   配信表示 ON / OFF を取得
+===================================== */
+
+async function getDisplayEnabled() {
+    const { data, error } =
+        await supabaseClient
+            .from("app_settings")
+            .select("value")
+            .eq("key", "stream_queue_visible")
+            .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    /*
+     * 設定がまだ存在しない場合はON。
+     */
+    if (!data) {
+        return true;
+    }
+
+    return !(
+        data.value === false ||
+        data.value === "false" ||
+        data.value === 0
+    );
+}
+
+
+/* =====================================
+   待機リスト更新
+===================================== */
+
+async function refreshQueue() {
+    if (polling) {
+        return;
+    }
+
+    polling = true;
+
+    try {
+        const enabled =
+            await getDisplayEnabled();
+
+        stage.style.display =
+            enabled ? "block" : "none";
+
+        if (!enabled) {
+            clearNames();
+            return;
+        }
+
+        const sessionId =
+            await getCurrentSessionId();
+
+        if (!sessionId) {
+            clearNames();
+            return;
+        }
+
+        const { data, error } =
+            await supabaseClient
+                .from("participants")
+                .select(
+                    "id, name, game_name, source, status, note, first_participation_pending, display_order, joined_at, session_id, chat_only, lobby_state"
+                )
+                .eq("session_id", sessionId)
+                .eq("status", "waiting");
+
+        if (error) {
+            throw error;
+        }
+
+        const waitingPeople =
+            (data || []).filter(
+                person =>
+                    !isChatOnlyPerson(person)
+            );
+
+        const sortedPeople =
+            sortWaitingPeople(waitingPeople);
+
+        /*
+         * 先頭から8人を順番に表示。
+         * 名前が未登録なら該当枠は空欄。
+         */
+        for (let i = 0; i < 8; i++) {
+            const person =
+                sortedPeople[i];
+
+            const displayName =
+                getQueueDisplayName(person);
+
+            slotElements[i].textContent =
+                displayName;
+
+            slotElements[i].title =
+                displayName;
+        }
+
+    } catch (error) {
+        console.error(
+            "[YP-Manager Queue]",
+            error
+        );
+
+    } finally {
+        polling = false;
+    }
+}
+
+
+/* =====================================
+   起動・自動更新
+===================================== */
+
+refreshQueue();
+
+setInterval(
+    refreshQueue,
+    2500
+);
+
+</script>
+</body>
+</html>

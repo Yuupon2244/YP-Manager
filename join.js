@@ -1,18 +1,13 @@
 // ========================================
-// YP-Manager URL参加ページ v1.3.5
-// ========================================
-
-
-// ========================================
-// Supabase接続
+// YP-Manager URL参加ページ v1.3.7
+// 辞退・チャットのみ利用・状態復元統合版
 // ========================================
 
 const SUPABASE_URL =
     "https://ilmiebokwfccybrtduxy.supabase.co";
 
 const SUPABASE_KEY =
-    "sb_publishable_tl-vkXmtiYn_f1VtPy689A_dwKCdYg5";
-
+    "sb_publishable_tl-vkXmtiYn_f1VtPy689A_dwYg5";
 
 const supabaseClient =
     window.supabase.createClient(
@@ -20,12 +15,11 @@ const supabaseClient =
         SUPABASE_KEY
     );
 
-
-// ========================================
-// 現在の配信ID
-// ========================================
-
 let currentSessionId = null;
+let currentEntry = null;
+let lastEntryLookupError = null;
+let lastSessionLookupError = null;
+let pageBusy = false;
 
 
 // ========================================
@@ -33,29 +27,19 @@ let currentSessionId = null;
 // ========================================
 
 const nameInput =
-    document.getElementById(
-        "nameInput"
-    );
+    document.getElementById("nameInput");
 
 const joinButton =
-    document.getElementById(
-        "joinButton"
-    );
+    document.getElementById("joinButton");
 
-const viewerButton =
-    document.getElementById(
-        "viewerButton"
-    );
+let viewerButton =
+    document.getElementById("viewerButton");
 
 const cancelButton =
-    document.getElementById(
-        "cancelButton"
-    );
+    document.getElementById("cancelButton");
 
 const message =
-    document.getElementById(
-        "message"
-    );
+    document.getElementById("message");
 
 
 // ========================================
@@ -63,16 +47,19 @@ const message =
 // ========================================
 
 function getUrlUserId() {
-    let userId =
-        localStorage.getItem(
-            "yp_url_user_id"
-        );
 
+    let userId =
+        localStorage.getItem("yp_url_user_id");
 
     if (!userId) {
-        userId =
-            "url-" +
-            crypto.randomUUID();
+
+        const uniqueId =
+            window.crypto &&
+            typeof window.crypto.randomUUID === "function"
+                ? window.crypto.randomUUID()
+                : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+        userId = `url-${uniqueId}`;
 
         localStorage.setItem(
             "yp_url_user_id",
@@ -80,47 +67,108 @@ function getUrlUserId() {
         );
     }
 
-
     return userId;
 }
-
 
 const URL_USER_ID =
     getUrlUserId();
 
 
 // ========================================
-// メッセージ表示
+// チャットのみボタン
 // ========================================
+
+function ensureViewerButton() {
+
+    if (
+        !viewerButton &&
+        joinButton &&
+        joinButton.parentElement
+    ) {
+
+        viewerButton =
+            joinButton.cloneNode(false);
+
+        viewerButton.id =
+            "viewerButton";
+
+        viewerButton.type =
+            "button";
+
+        viewerButton.textContent =
+            "💬 チャットのみ利用する";
+
+        viewerButton.disabled =
+            false;
+
+        viewerButton.style.marginTop =
+            "8px";
+
+        joinButton.insertAdjacentElement(
+            "afterend",
+            viewerButton
+        );
+    }
+
+    if (
+        viewerButton &&
+        viewerButton.dataset.ypViewerHandlerBound !== "true"
+    ) {
+
+        viewerButton.addEventListener(
+            "click",
+            joinAsViewer
+        );
+
+        viewerButton.dataset.ypViewerHandlerBound =
+            "true";
+    }
+}
+
+
+// ========================================
+// メッセージ
+// ========================================
+
+function escapeHtml(value) {
+
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
 
 function showMessage(
     text,
     type = ""
 ) {
-    message.className =
-        type;
 
-    message.innerHTML =
-        text;
+    if (!message) {
+        return;
+    }
+
+    message.className = type;
+    message.innerHTML = text;
 }
 
 
 // ========================================
-// チャット本人確認token
+// 本人確認トークン
 // ========================================
 
 function getCancelToken(
     participantId
 ) {
+
     if (!participantId) {
         return null;
     }
 
-    const key =
-        `yp_participant_cancel_token_${participantId}`;
-
     return localStorage.getItem(
-        key
+        `yp_participant_cancel_token_${participantId}`
     );
 }
 
@@ -128,40 +176,31 @@ function getCancelToken(
 async function ensureCancelToken(
     entry
 ) {
-    if (
-        !entry ||
-        !entry.id
-    ) {
+
+    if (!entry || !entry.id) {
         return null;
     }
 
     const existing =
-        getCancelToken(
-            entry.id
-        );
+        getCancelToken(entry.id);
 
     if (existing) {
         return existing;
     }
 
-
     const {
         data,
         error
-    } =
-        await supabaseClient.rpc(
-            "get_or_create_participant_cancel_token",
-            {
-                p_participant_id:
-                    entry.id,
-
-                p_user_id:
-                    URL_USER_ID
-            }
-        );
-
+    } = await supabaseClient.rpc(
+        "get_or_create_participant_cancel_token",
+        {
+            p_participant_id: entry.id,
+            p_user_id: URL_USER_ID
+        }
+    );
 
     if (error) {
+
         console.error(
             "本人確認token取得エラー:",
             error
@@ -170,30 +209,44 @@ async function ensureCancelToken(
         return null;
     }
 
+    let token = null;
 
-    const token =
-        typeof data === "string"
-            ? data
-            : data?.cancel_token ||
-              data?.token ||
-              null;
+    if (typeof data === "string") {
 
+        token = data;
+
+    } else if (
+        Array.isArray(data) &&
+        data.length > 0
+    ) {
+
+        token =
+            data[0]?.cancel_token ||
+            data[0]?.token ||
+            null;
+
+    } else {
+
+        token =
+            data?.cancel_token ||
+            data?.token ||
+            null;
+    }
 
     if (!token) {
+
         console.error(
-            "本人確認tokenが返されませんでした。",
+            "本人確認tokenが返されませんでした:",
             data
         );
 
         return null;
     }
 
-
     localStorage.setItem(
         `yp_participant_cancel_token_${entry.id}`,
         token
     );
-
 
     return token;
 }
@@ -205,21 +258,22 @@ async function ensureCancelToken(
 
 function setDefaultButtonStyles() {
 
-    viewerButton.style.backgroundColor =
-        "";
+    if (!viewerButton) {
+        return;
+    }
 
-    viewerButton.style.color =
-        "";
-
-    viewerButton.style.borderColor =
-        "";
-
-    viewerButton.style.boxShadow =
-        "";
+    viewerButton.style.backgroundColor = "";
+    viewerButton.style.color = "";
+    viewerButton.style.borderColor = "";
+    viewerButton.style.boxShadow = "";
 }
 
 
 function setViewerJoinButtonStyle() {
+
+    if (!viewerButton) {
+        return;
+    }
 
     viewerButton.style.backgroundColor =
         "#2ecc71";
@@ -235,73 +289,75 @@ function setViewerJoinButtonStyle() {
 }
 
 
+function showCancelButton(text) {
+
+    if (!cancelButton) {
+        return;
+    }
+
+    cancelButton.disabled = false;
+    cancelButton.textContent = text;
+    cancelButton.classList.remove("hidden");
+}
+
+
+function hideCancelButton() {
+
+    if (!cancelButton) {
+        return;
+    }
+
+    cancelButton.disabled = false;
+    cancelButton.textContent = "参加を辞退する";
+    cancelButton.classList.add("hidden");
+}
+
+
 // ========================================
-// 現在の配信IDをSupabaseから取得
+// 現在の配信IDを取得
 // ========================================
 
 async function loadCurrentSession() {
+
+    lastSessionLookupError = null;
+
     try {
 
         const {
             data,
             error
-        } =
-            await supabaseClient
-                .from(
-                    "app_settings"
-                )
-                .select(
-                    "value"
-                )
-                .eq(
-                    "key",
-                    "current_session_id"
-                )
-                .maybeSingle();
-
+        } = await supabaseClient
+            .from("app_settings")
+            .select("value")
+            .eq("key", "current_session_id")
+            .maybeSingle();
 
         if (error) {
-            console.error(
-                "現在配信取得エラー:",
-                error
-            );
+            throw error;
+        }
+
+        if (!data?.value) {
+
+            currentSessionId = null;
 
             return false;
         }
-
-
-        if (
-            !data ||
-            !data.value
-        ) {
-            console.warn(
-                "現在の配信IDがありません"
-            );
-
-            return false;
-        }
-
 
         currentSessionId =
-            String(
-                data.value
-            ).trim();
+            String(data.value).trim();
 
-
-        console.log(
-            "現在の配信ID:",
-            currentSessionId
-        );
-
-
-        return true;
+        return Boolean(currentSessionId);
 
     } catch (error) {
 
+        lastSessionLookupError = error;
+
         console.error(
-            "現在配信取得例外:",
+            "現在配信取得エラー:",
             error
         );
+
+        currentSessionId = null;
 
         return false;
     }
@@ -309,51 +365,53 @@ async function loadCurrentSession() {
 
 
 // ========================================
-// 現在の自分の有効参加状態を取得
-// waiting / viewer
+// 自分の有効な参加データを取得
 // ========================================
 
 async function getMyActiveEntry() {
+
+    lastEntryLookupError = null;
 
     if (!currentSessionId) {
         return null;
     }
 
+    try {
 
-    const {
-        data,
-        error
-    } =
-        await supabaseClient
-            .from(
-                "participants"
-            )
+        const {
+            data,
+            error
+        } = await supabaseClient
+            .from("participants")
             .select("*")
-            .eq(
-                "user_id",
-                URL_USER_ID
-            )
-            .eq(
-                "session_id",
-                currentSessionId
-            )
+            .eq("user_id", URL_USER_ID)
+            .eq("session_id", currentSessionId)
             .in(
                 "status",
-                [
-                    "waiting",
-                    "viewer"
-                ]
+                ["waiting", "viewer", "playing"]
             )
             .order(
                 "joined_at",
                 {
-                    ascending:false
+                    ascending: false
                 }
             )
             .limit(1);
 
+        if (error) {
+            throw error;
+        }
 
-    if (error) {
+        currentEntry =
+            data?.[0] || null;
+
+        return currentEntry;
+
+    } catch (error) {
+
+        lastEntryLookupError = error;
+        currentEntry = null;
+
         console.error(
             "参加状態確認エラー:",
             error
@@ -361,274 +419,495 @@ async function getMyActiveEntry() {
 
         return null;
     }
-
-
-    if (
-        !data ||
-        data.length === 0
-    ) {
-        return null;
-    }
-
-
-    return data[0];
 }
 
 
 // 後方互換用
 async function getMyWaitingEntry() {
+
     return await getMyActiveEntry();
 }
 
 
 // ========================================
-// 現在の実際の待ち順位
+// 待ち順位
 // ========================================
 
 async function getCurrentPosition(
     entry
 ) {
 
-    if (!currentSessionId) {
+    if (!currentSessionId || !entry) {
         return null;
     }
-
 
     const {
         data,
         error
-    } =
-        await supabaseClient
-            .from(
-                "participants"
-            )
-            .select(
-                "id, display_order"
-            )
-            .eq(
-                "session_id",
-                currentSessionId
-            )
-            .eq(
-                "status",
-                "waiting"
-            )
-            .order(
-                "display_order",
-                {
-                    ascending:true
-                }
-            );
+    } = await supabaseClient
+        .from("participants")
+        .select("id, display_order")
+        .eq("session_id", currentSessionId)
+        .eq("status", "waiting")
+        .order(
+            "display_order",
+            {
+                ascending: true,
+                nullsFirst: false
+            }
+        )
+        .order(
+            "joined_at",
+            {
+                ascending: true
+            }
+        );
 
-
-    if (
-        error ||
-        !data
-    ) {
-        return entry.display_order;
+    if (error || !data) {
+        return entry.display_order ?? "?";
     }
-
 
     const index =
         data.findIndex(
-            person =>
-                person.id ===
-                entry.id
+            person => person.id === entry.id
         );
 
-
-    if (index === -1) {
-        return entry.display_order;
-    }
-
-
-    return index + 1;
+    return index < 0
+        ? (entry.display_order ?? "?")
+        : index + 1;
 }
 
 
 // ========================================
-// 待機列参加中UI
+// 状態判定
 // ========================================
 
-async function showWaitingState(
-    entry
-) {
+function isChatOnlyEntry(entry) {
+
+    return Boolean(
+        entry &&
+        entry.status === "viewer" &&
+        entry.lobby_state !== "watching"
+    );
+}
+
+
+function isWatchingEntry(entry) {
+
+    return Boolean(
+        entry &&
+        (
+            entry.lobby_state === "watching" ||
+            (
+                entry.status === "viewer" &&
+                entry.lobby_state !== "chat_only" &&
+                entry.note !== "viewer"
+            )
+        )
+    );
+}
+
+
+// ========================================
+// 状態別画面
+// ========================================
+
+async function showWaitingState(entry) {
+
+    ensureViewerButton();
 
     const position =
-        await getCurrentPosition(
-            entry
-        );
+        await getCurrentPosition(entry);
 
+    if (nameInput) {
+        nameInput.disabled = true;
+    }
 
-    nameInput.disabled =
-        true;
+    if (joinButton) {
 
+        joinButton.disabled = true;
 
-    // 現在は待機列参加中
-    joinButton.disabled =
-        true;
+        joinButton.textContent =
+            "🎮 待機列に参加中";
+    }
 
-    joinButton.textContent =
-        "🎮 待機列に参加中";
+    if (viewerButton) {
 
+        viewerButton.disabled = false;
 
-    // 逆の操作を可能にする
-    viewerButton.disabled =
-        false;
+        viewerButton.textContent =
+            "💬 チャットのみ利用する";
 
-    viewerButton.textContent =
-        "💬 チャットのみ利用する";
+        setDefaultButtonStyles();
+    }
 
-    setDefaultButtonStyles();
-
-
-    cancelButton.disabled =
-        false;
-
-    cancelButton.textContent =
-        "参加を辞退する";
-
-    cancelButton.classList.remove(
-        "hidden"
+    showCancelButton(
+        "参加を辞退する"
     );
-
 
     showMessage(
         `参加受付済みです！<br><br>
         現在の待ち順は
-        <strong>${position}番</strong>
+        <strong>${escapeHtml(position)}番</strong>
         です。`,
         "success"
     );
 }
 
 
-// ========================================
-// チャットのみ利用中UI
-// ========================================
+function showPlayingState(entry) {
 
-function showViewerState(
-    entry
-) {
+    ensureViewerButton();
 
-    nameInput.disabled =
-        true;
+    if (nameInput) {
+        nameInput.disabled = true;
+    }
 
+    if (joinButton) {
 
-    // 現在は待機列にいない
-    joinButton.disabled =
-        true;
+        joinButton.disabled = true;
 
-    joinButton.textContent =
-        "🎮 待機列には参加していません";
+        joinButton.textContent =
+            "🎮 ロビー参加中";
+    }
 
+    if (viewerButton) {
 
-    // こちらを
-    // 「待機列に参加する」ボタンにする
-    viewerButton.disabled =
-        false;
+        viewerButton.disabled = false;
 
-    viewerButton.textContent =
-        "🎮 待機列に参加する";
+        viewerButton.textContent =
+            "💬 チャットのみ利用する";
 
-    setViewerJoinButtonStyle();
+        setDefaultButtonStyles();
+    }
 
-
-    cancelButton.disabled =
-        false;
-
-    cancelButton.textContent =
-        "チャットのみ利用を終了";
-
-    cancelButton.classList.remove(
-        "hidden"
+    showCancelButton(
+        "参加を辞退する"
     );
 
-
     showMessage(
-        `チャットのみ利用中です。<br>
-        待機列には参加していません。`,
+        "メインロビーに参加中です。<br>" +
+        "退出する場合は「参加を辞退する」を押してください。",
         "success"
     );
 }
 
 
-// ========================================
-// 未参加UI
-// ========================================
+function showWatchingState(entry) {
+
+    ensureViewerButton();
+
+    if (nameInput) {
+        nameInput.disabled = true;
+    }
+
+    if (joinButton) {
+
+        joinButton.disabled = true;
+
+        joinButton.textContent =
+            "👀 ロビー観戦中";
+    }
+
+    if (viewerButton) {
+
+        viewerButton.disabled = false;
+
+        viewerButton.textContent =
+            "💬 チャットのみ利用する";
+
+        setDefaultButtonStyles();
+    }
+
+    showCancelButton(
+        "観戦を辞退する"
+    );
+
+    showMessage(
+        "メインロビーで観戦中です。<br>" +
+        "退出する場合は「観戦を辞退する」を押してください。",
+        "success"
+    );
+}
+
+
+function showViewerState(entry) {
+
+    ensureViewerButton();
+
+    if (nameInput) {
+        nameInput.disabled = true;
+    }
+
+    if (joinButton) {
+
+        joinButton.disabled = true;
+
+        joinButton.textContent =
+            "🎮 待機列には参加していません";
+    }
+
+    if (viewerButton) {
+
+        viewerButton.disabled = false;
+
+        viewerButton.textContent =
+            "🎮 待機列に参加する";
+
+        setViewerJoinButtonStyle();
+    }
+
+    showCancelButton(
+        "チャットのみ利用を終了"
+    );
+
+    showMessage(
+        "チャットのみ利用中です。<br>" +
+        "待機列には参加していません。<br>" +
+        "待機列に戻る場合は「待機列に参加する」を押してください。",
+        "success"
+    );
+}
+
 
 function showJoinState() {
 
-    nameInput.disabled =
-        false;
+    ensureViewerButton();
+
+    if (nameInput) {
+        nameInput.disabled = false;
+    }
+
+    if (joinButton) {
+
+        joinButton.disabled = false;
+
+        joinButton.textContent =
+            "🎮 待機列に参加する";
+    }
+
+    if (viewerButton) {
+
+        viewerButton.disabled = false;
+
+        viewerButton.textContent =
+            "💬 チャットのみ利用する";
+
+        setDefaultButtonStyles();
+    }
+
+    hideCancelButton();
+}
 
 
-    joinButton.disabled =
-        false;
+// 検索に失敗した場合は未参加扱いにしない
+function showStateLookupProblem() {
 
-    joinButton.textContent =
-        "🎮 待機列に参加する";
+    ensureViewerButton();
+
+    if (nameInput) {
+        nameInput.disabled = true;
+    }
+
+    if (joinButton) {
+        joinButton.disabled = true;
+    }
+
+    if (viewerButton) {
+        viewerButton.disabled = true;
+    }
+
+    if (cancelButton) {
+
+        cancelButton.disabled = true;
+
+        cancelButton.textContent =
+            "参加状態を確認できません";
+
+        cancelButton.classList.remove("hidden");
+    }
+
+    showMessage(
+        "参加状態を確認できませんでした。<br>" +
+        "通信状態を確認して、ページを再読み込みしてください。<br>" +
+        "登録状態が不明なため、未参加扱いには変更していません。",
+        "error"
+    );
+}
 
 
-    viewerButton.disabled =
-        false;
+function showNoSessionState() {
 
-    viewerButton.textContent =
-        "💬 チャットのみ利用する";
+    if (nameInput) {
+        nameInput.disabled = true;
+    }
 
-    setDefaultButtonStyles();
+    if (joinButton) {
 
+        joinButton.disabled = true;
 
-    cancelButton.disabled =
-        false;
+        joinButton.textContent =
+            "現在受付していません";
+    }
 
-    cancelButton.textContent =
-        "参加を辞退する";
+    if (viewerButton) {
 
-    cancelButton.classList.add(
-        "hidden"
+        viewerButton.disabled = true;
+
+        viewerButton.textContent =
+            "💬 チャットのみ利用する";
+    }
+
+    hideCancelButton();
+
+    showMessage(
+        "現在、参加受付中の配信を確認できませんでした。<br>" +
+        "配信開始後にページを再読み込みしてください。",
+        "info"
     );
 }
 
 
 // ========================================
-// 配信なしUI
+// 更新後の参加者情報を取得
 // ========================================
 
-function showNoSessionState() {
+async function fetchParticipantById(
+    participantId
+) {
 
-    nameInput.disabled =
-        true;
+    const {
+        data,
+        error
+    } = await supabaseClient
+        .from("participants")
+        .select("*")
+        .eq("id", participantId)
+        .eq("session_id", currentSessionId)
+        .maybeSingle();
+
+    if (error) {
+        throw error;
+    }
+
+    return data || null;
+}
 
 
-    joinButton.disabled =
-        true;
+// ========================================
+// 本人確認token付きRPC
+// ========================================
 
-    joinButton.textContent =
-        "現在受付していません";
+async function callParticipantRpc(
+    rpcName,
+    entry
+) {
 
+    const token =
+        getCancelToken(entry?.id) ||
+        await ensureCancelToken(entry);
 
-    viewerButton.disabled =
-        true;
+    if (!token) {
 
-    viewerButton.textContent =
-        "💬 チャットのみ利用する";
+        throw new Error(
+            "本人確認トークンを取得できませんでした。ページを再読み込みしてください。"
+        );
+    }
 
-    setDefaultButtonStyles();
-
-
-    cancelButton.classList.add(
-        "hidden"
+    const {
+        data,
+        error
+    } = await supabaseClient.rpc(
+        rpcName,
+        {
+            p_participant_id: entry.id,
+            p_cancel_token: token
+        }
     );
 
+    if (error) {
+        throw error;
+    }
 
-    showMessage(
-        `現在、参加受付中の配信を
-        確認できませんでした。<br>
-        配信開始後にページを
-        再読み込みしてください。`,
-        "info"
+    console.log(
+        `[YP-Manager] ${rpcName} RPC結果:`,
+        data
     );
+
+    const latest =
+        await fetchParticipantById(entry.id);
+
+    if (!latest) {
+
+        throw new Error(
+            "更新後の参加者情報を確認できませんでした。"
+        );
+    }
+
+    return latest;
+}
+
+
+// ========================================
+// 待機列の次の順番
+// ========================================
+
+async function getNextDisplayOrder(
+    excludeId = null,
+    rejoin = false
+) {
+
+    let query =
+        supabaseClient
+            .from("participants")
+            .select("display_order")
+            .eq("session_id", currentSessionId)
+            .eq("status", "waiting")
+            .is("room_id", null);
+
+    if (excludeId) {
+
+        query =
+            query.neq(
+                "id",
+                excludeId
+            );
+    }
+
+    const {
+        data,
+        error
+    } = await query;
+
+    if (error) {
+        throw error;
+    }
+
+    const values =
+        (data || [])
+            .map(
+                row => Number(row.display_order)
+            )
+            .filter(
+                value =>
+                    Number.isFinite(value) &&
+                    (
+                        rejoin
+                            ? value >= 1000000
+                            : value < 1000000
+                    )
+            );
+
+    if (rejoin) {
+
+        return values.length
+            ? Math.max(...values) + 1
+            : 1000000;
+    }
+
+    return values.length
+        ? Math.max(...values) + 1
+        : 1;
 }
 
 
@@ -638,701 +917,418 @@ function showNoSessionState() {
 
 async function joinQueue() {
 
-    const sessionLoaded =
-        await loadCurrentSession();
-
-
-    if (!sessionLoaded) {
-
-        showNoSessionState();
-
+    if (pageBusy) {
         return;
     }
 
+    pageBusy = true;
 
-    // 現在の参加状態を先に取得
-    // viewerからの再参加では
-    // 名前入力を要求しない
-    const currentEntry =
-        await getMyActiveEntry();
+    try {
 
+        if (!(await loadCurrentSession())) {
 
-    // ====================================
-    // viewer → waiting
-    // ====================================
-
-    if (
-        currentEntry &&
-        currentEntry.status ===
-        "viewer"
-    ) {
-
-        joinButton.disabled =
-            true;
-
-        viewerButton.disabled =
-            true;
-
-        viewerButton.textContent =
-            "待機列へ移動中…";
-
-        setViewerJoinButtonStyle();
-
-
-        // 現在の最後尾を取得
-        const {
-            data: lastData,
-            error: lastError
-        } =
-            await supabaseClient
-                .from(
-                    "participants"
-                )
-                .select(
-                    "display_order"
-                )
-                .eq(
-                    "session_id",
-                    currentSessionId
-                )
-                .neq(
-                    "id",
-                    currentEntry.id
-                )
-                .order(
-                    "display_order",
-                    {
-                        ascending:false,
-                        nullsFirst:false
-                    }
-                )
-                .limit(1);
-
-
-        if (lastError) {
-
-            console.error(
-                "待機順取得エラー:",
-                lastError
-            );
-
-
-            showMessage(
-                "待機列の順番を取得できませんでした。",
-                "error"
-            );
-
-
-            showViewerState(
-                currentEntry
-            );
+            if (lastSessionLookupError) {
+                showStateLookupProblem();
+            } else {
+                showNoSessionState();
+            }
 
             return;
         }
 
+        const entry =
+            await getMyActiveEntry();
 
-        let nextOrder =
-            1;
+        if (lastEntryLookupError) {
 
+            showStateLookupProblem();
 
-        if (
-            lastData &&
-            lastData.length > 0 &&
-            Number.isFinite(
-                Number(
-                    lastData[0]
-                        .display_order
-                )
-            )
-        ) {
-
-            nextOrder =
-                Number(
-                    lastData[0]
-                        .display_order
-                ) + 1;
+            return;
         }
 
+        if (entry) {
 
-        const {
-            error
-        } =
-            await supabaseClient
-                .from(
-                    "participants"
-                )
-                .update({
-                    status:
-                        "waiting",
+            if (entry.status === "playing") {
 
-                    display_order:
-                        nextOrder,
+                if (isWatchingEntry(entry)) {
+                    showWatchingState(entry);
+                } else {
+                    showPlayingState(entry);
+                }
 
-                    note:
-                        null
-                })
-                .eq(
-                    "id",
-                    currentEntry.id
-                )
-                .eq(
-                    "user_id",
-                    URL_USER_ID
-                )
-                .eq(
-                    "session_id",
-                    currentSessionId
+                return;
+            }
+
+            if (entry.status === "waiting") {
+
+                await showWaitingState(entry);
+
+                return;
+            }
+
+            if (isChatOnlyEntry(entry)) {
+
+                const updated =
+                    await callParticipantRpc(
+                        "return_url_participant_to_queue",
+                        entry
+                    );
+
+                if (updated.status !== "waiting") {
+
+                    throw new Error(
+                        "待機列への復帰を確認できませんでした。"
+                    );
+                }
+
+                await ensureCancelToken(updated);
+
+                currentEntry = updated;
+
+                await showWaitingState(updated);
+
+                showMessage(
+                    "待機列に戻りました！順番どおりにお待ちください。",
+                    "success"
                 );
 
+                return;
+            }
 
-        if (error) {
+            if (
+                entry.status === "viewer" &&
+                isWatchingEntry(entry)
+            ) {
 
-            console.error(
-                "待機列への切替エラー:",
-                error
-            );
+                showWatchingState(entry);
 
+                return;
+            }
+        }
+
+        const name =
+            (nameInput?.value || "").trim();
+
+        if (!name) {
 
             showMessage(
-                "待機列への参加に切り替えられませんでした。",
+                "名前を入力してください。",
                 "error"
-            );
-
-
-            showViewerState(
-                currentEntry
             );
 
             return;
         }
 
+        if (name.length > 30) {
 
-        await ensureCancelToken(
-            currentEntry
-        );
+            showMessage(
+                "名前は30文字以内にしてください。",
+                "error"
+            );
 
+            return;
+        }
 
-        const updatedEntry = {
-            ...currentEntry,
+        if (joinButton) {
 
-            status:
-                "waiting",
+            joinButton.disabled = true;
 
-            display_order:
-                nextOrder,
+            joinButton.textContent =
+                "送信中…";
+        }
 
-            note:
-                null
-        };
+        if (viewerButton) {
+            viewerButton.disabled = true;
+        }
 
+        const displayOrder =
+            await getNextDisplayOrder();
 
-        await showWaitingState(
-            updatedEntry
-        );
-
-
-        showMessage(
-            `待機列に参加しました！<br>
-            現在の待ち順は
-            <strong>${nextOrder}番</strong>
-            です。`,
-            "success"
-        );
-
-
-        return;
-    }
-
-
-    // ====================================
-    // waiting → waiting
-    // ====================================
-
-    if (
-        currentEntry &&
-        currentEntry.status ===
-        "waiting"
-    ) {
-
-        await showWaitingState(
-            currentEntry
-        );
-
-        return;
-    }
-
-
-    // ====================================
-    // 新規参加
-    // ====================================
-
-    const name =
-        nameInput.value.trim();
-
-
-    if (name === "") {
-
-        showMessage(
-            "名前を入力してください。",
-            "error"
-        );
-
-        return;
-    }
-
-
-    if (name.length > 30) {
-
-        showMessage(
-            "名前は30文字以内にしてください。",
-            "error"
-        );
-
-        return;
-    }
-
-
-    joinButton.disabled =
-        true;
-
-    viewerButton.disabled =
-        true;
-
-    joinButton.textContent =
-        "送信中…";
-
-
-    // ------------------------------------
-    // 現在の最後尾を取得
-    // ------------------------------------
-
-    const {
-        data: lastData,
-        error: lastError
-    } =
-        await supabaseClient
-            .from(
-                "participants"
-            )
-            .select(
-                "display_order"
-            )
-            .eq(
-                "session_id",
-                currentSessionId
-            )
-            .order(
-                "display_order",
-                {
-                    ascending:false,
-                    nullsFirst:false
-                }
-            )
-            .limit(1);
-
-
-    if (lastError) {
-
-        console.error(
-            "順番取得エラー:",
-            lastError
-        );
-
-
-        showMessage(
-            "待機列を確認できませんでした。",
-            "error"
-        );
-
-
-        showJoinState();
-
-        return;
-    }
-
-
-    let nextOrder =
-        1;
-
-
-    if (
-        lastData &&
-        lastData.length > 0 &&
-        Number.isFinite(
-            Number(
-                lastData[0]
-                    .display_order
-            )
-        )
-    ) {
-
-        nextOrder =
-            Number(
-                lastData[0]
-                    .display_order
-            ) + 1;
-    }
-
-
-    // ------------------------------------
-    // Supabase追加
-    // ------------------------------------
-
-    const {
-        data,
-        error
-    } =
-        await supabaseClient
-            .from(
-                "participants"
-            )
-            .insert([
-                {
-                    name:
-                        name,
-
-                    status:
-                        "waiting",
-
-                    source:
-                        "url",
-
-                    user_id:
-                        URL_USER_ID,
-
-                    display_order:
-                        nextOrder,
-
-                    note:
-                        null,
-
-                    session_id:
-                        currentSessionId
-                }
-            ])
+        const {
+            data,
+            error
+        } = await supabaseClient
+            .from("participants")
+            .insert([{
+                name,
+                status: "waiting",
+                lobby_state: "waiting",
+                source: "url",
+                user_id: URL_USER_ID,
+                display_order: displayOrder,
+                note: null,
+                room_id: null,
+                session_id: currentSessionId
+            }])
             .select();
 
+        if (error) {
+            throw error;
+        }
 
-    if (error) {
+        if (!data?.length) {
+
+            throw new Error(
+                "参加登録結果を確認できませんでした。"
+            );
+        }
+
+        if (nameInput) {
+            nameInput.value = "";
+        }
+
+        await ensureCancelToken(data[0]);
+
+        currentEntry = data[0];
+
+        await showWaitingState(data[0]);
+
+    } catch (error) {
 
         console.error(
-            "参加エラー:",
+            "待機列参加エラー:",
             error
         );
 
-
-showMessage(
-    `参加できませんでした。<br>
-    code: ${error?.code || "なし"}<br>
-    ${error?.message || "原因不明のエラー"}`,
-    "error"
-);
-
-
-        showJoinState();
-
-        return;
-    }
-
-
-    console.log(
-        "URL参加成功:",
-        data
-    );
-
-
-    nameInput.value =
-        "";
-
-
-    if (
-        data &&
-        data.length > 0
-    ) {
-
-        await ensureCancelToken(
-            data[0]
+        showMessage(
+            `待機列に参加できませんでした。<br>${escapeHtml(error?.message || "原因不明のエラー")}`,
+            "error"
         );
 
+        if (joinButton) {
+            joinButton.disabled = false;
+        }
 
-        await showWaitingState(
-            data[0]
-        );
+        if (viewerButton) {
+            viewerButton.disabled = false;
+        }
+
+    } finally {
+
+        pageBusy = false;
     }
 }
 
 
 // ========================================
-// チャットのみ利用する
+// チャットのみ利用
 // ========================================
 
 async function joinAsViewer() {
 
-    const sessionLoaded =
-        await loadCurrentSession();
-
-
-    if (!sessionLoaded) {
-        showNoSessionState();
+    if (pageBusy) {
         return;
     }
 
+    pageBusy = true;
 
-    const currentEntry =
-        await getMyActiveEntry();
+    try {
 
+        if (!(await loadCurrentSession())) {
 
-    // ====================================
-    // viewer → waiting
-    // ====================================
+            if (lastSessionLookupError) {
+                showStateLookupProblem();
+            } else {
+                showNoSessionState();
+            }
 
-    if (
-        currentEntry &&
-        currentEntry.status ===
-        "viewer"
-    ) {
-
-        // 「待機列に参加する」は
-        // joinQueueと同じ処理
-        await joinQueue();
-
-        return;
-    }
-
-
-    // ====================================
-    // waiting → viewer
-    // ====================================
-
-    if (
-        currentEntry &&
-        currentEntry.status ===
-        "waiting"
-    ) {
-
-        const confirmed =
-            confirm(
-                "待機列への参加をやめて、チャットのみ利用に切り替えますか？"
-            );
-
-
-        if (!confirmed) {
             return;
         }
 
+        const entry =
+            await getMyActiveEntry();
 
-        viewerButton.disabled =
-            true;
+        if (lastEntryLookupError) {
 
-        joinButton.disabled =
-            true;
+            showStateLookupProblem();
 
-        viewerButton.textContent =
-            "切替中…";
+            return;
+        }
 
+        // チャットのみから待機列へ復帰
+        if (isChatOnlyEntry(entry)) {
 
-        const {
-            error
-        } =
-            await supabaseClient
-                .from(
-                    "participants"
-                )
-                .update({
-                    status:
-                        "viewer",
-
-                    display_order:
-                        null,
-
-                    note:
-                        "viewer"
-                })
-                .eq(
-                    "id",
-                    currentEntry.id
-                )
-                .eq(
-                    "user_id",
-                    URL_USER_ID
-                )
-                .eq(
-                    "session_id",
-                    currentSessionId
+            const updated =
+                await callParticipantRpc(
+                    "return_url_participant_to_queue",
+                    entry
                 );
 
+            if (updated.status !== "waiting") {
 
-        if (error) {
+                throw new Error(
+                    "待機列への復帰を確認できませんでした。"
+                );
+            }
 
-            console.error(
-                "チャットのみ利用への切替エラー:",
-                error
-            );
+            await ensureCancelToken(updated);
 
+            currentEntry = updated;
+
+            await showWaitingState(updated);
 
             showMessage(
-                "チャットのみ利用への切り替えに失敗しました。",
+                "待機列に戻りました！順番どおりにお待ちください。",
+                "success"
+            );
+
+            return;
+        }
+
+        // 登録済みの人をチャットのみ利用へ切り替える
+        if (
+            entry &&
+            ["waiting", "playing", "viewer"]
+                .includes(entry.status)
+        ) {
+
+            if (!confirm(
+                "待機列またはメインロビーから退出して、チャットのみ利用に切り替えますか？"
+            )) {
+                return;
+            }
+
+            if (viewerButton) {
+
+                viewerButton.disabled = true;
+
+                viewerButton.textContent =
+                    "切替中…";
+            }
+
+            if (joinButton) {
+                joinButton.disabled = true;
+            }
+
+            const updated =
+                await callParticipantRpc(
+                    "set_url_participant_chat_only",
+                    entry
+                );
+
+            if (
+                updated.status !== "viewer" ||
+                updated.lobby_state !== "chat_only"
+            ) {
+
+                throw new Error(
+                    "チャットのみ利用への切り替えを確認できませんでした。"
+                );
+            }
+
+            await ensureCancelToken(updated);
+
+            currentEntry = updated;
+
+            showViewerState(updated);
+
+            showMessage(
+                "チャットのみ利用に切り替えました。メインロビー／待機列から退出しています。",
+                "success"
+            );
+
+            return;
+        }
+
+        // 新規のチャットのみ利用
+        const name =
+            (nameInput?.value || "").trim();
+
+        if (!name) {
+
+            showMessage(
+                "初めてチャットのみ利用する場合は、先に名前を入力してください。",
                 "error"
             );
 
+            return;
+        }
 
-            await showWaitingState(
-                currentEntry
+        if (name.length > 30) {
+
+            showMessage(
+                "名前は30文字以内にしてください。",
+                "error"
             );
 
             return;
         }
 
+        if (viewerButton) {
 
-        await ensureCancelToken(
-            currentEntry
-        );
+            viewerButton.disabled = true;
 
+            viewerButton.textContent =
+                "登録中…";
+        }
 
-        showViewerState(
-            {
-                ...currentEntry,
+        if (joinButton) {
+            joinButton.disabled = true;
+        }
 
-                status:
-                    "viewer",
+        const {
+            data,
+            error
+        } = await supabaseClient
+            .from("participants")
+            .insert([{
+                name,
+                status: "viewer",
+                lobby_state: "chat_only",
+                source: "url",
+                user_id: URL_USER_ID,
+                display_order: null,
+                note: "viewer",
+                room_id: null,
+                session_id: currentSessionId
+            }])
+            .select();
 
-                display_order:
-                    null,
+        if (error) {
+            throw error;
+        }
 
-                note:
-                    "viewer"
-            }
-        );
+        if (!data?.length) {
 
+            throw new Error(
+                "チャットのみ利用の登録結果を確認できませんでした。"
+            );
+        }
+
+        await ensureCancelToken(data[0]);
+
+        currentEntry = data[0];
+
+        showViewerState(data[0]);
 
         showMessage(
-            `チャットのみ利用に切り替えました。<br>
-            待機列には参加していません。`,
+            "チャットのみ利用中です。待機列には参加していません。",
             "success"
         );
 
-
-        return;
-    }
-
-
-    // ====================================
-    // 新規viewer登録
-    // ====================================
-
-    const name =
-        nameInput.value.trim();
-
-
-    if (name === "") {
-
-        showMessage(
-            "名前を入力してください。",
-            "error"
-        );
-
-        return;
-    }
-
-
-    if (name.length > 30) {
-
-        showMessage(
-            "名前は30文字以内にしてください。",
-            "error"
-        );
-
-        return;
-    }
-
-
-    viewerButton.disabled =
-        true;
-
-    joinButton.disabled =
-        true;
-
-    viewerButton.textContent =
-        "登録中…";
-
-
-    const {
-        data,
-        error
-    } =
-        await supabaseClient
-            .from(
-                "participants"
-            )
-            .insert([
-                {
-                    name:
-                        name,
-
-                    status:
-                        "viewer",
-
-                    source:
-                        "url",
-
-                    user_id:
-                        URL_USER_ID,
-
-                    display_order:
-                        null,
-
-                    note:
-                        "viewer",
-
-                    session_id:
-                        currentSessionId
-                }
-            ])
-            .select();
-
-
-    if (error) {
+    } catch (error) {
 
         console.error(
-            "チャットのみ利用登録エラー:",
+            "チャットのみ利用切替エラー:",
             error
         );
 
-
-showMessage(
-    `チャットのみ利用に登録できませんでした。<br>
-    code: ${error?.code || "なし"}<br>
-    ${error?.message || "原因不明のエラー"}`,
-    "error"
-);
-
-
-        showJoinState();
-
-        return;
-    }
-
-
-    if (
-        data &&
-        data.length > 0
-    ) {
-
-        await ensureCancelToken(
-            data[0]
-        );
-
-
-        showViewerState(
-            data[0]
-        );
-
-
         showMessage(
-            `チャットのみ利用中です。<br>
-            待機列には参加していません。`,
-            "success"
+            `チャットのみ利用に切り替えられませんでした。<br>${escapeHtml(error?.message || "原因不明のエラー")}`,
+            "error"
         );
+
+        if (joinButton) {
+            joinButton.disabled = false;
+        }
+
+        if (viewerButton) {
+            viewerButton.disabled = false;
+        }
+
+    } finally {
+
+        pageBusy = false;
     }
 }
 
@@ -1343,271 +1339,331 @@ showMessage(
 
 async function cancelQueue() {
 
-    const sessionLoaded =
-        await loadCurrentSession();
-
-
-    if (!sessionLoaded) {
-
-        showNoSessionState();
-
+    if (pageBusy) {
         return;
     }
 
+    pageBusy = true;
 
-    const entry =
-        await getMyActiveEntry();
+    let entry = null;
 
+    try {
 
-    if (!entry) {
+        if (!(await loadCurrentSession())) {
 
-        showMessage(
-            "現在、参加受付されていません。",
-            "info"
+            if (lastSessionLookupError) {
+                showStateLookupProblem();
+            } else {
+                showNoSessionState();
+            }
+
+            return;
+        }
+
+        entry =
+            await getMyActiveEntry();
+
+        if (lastEntryLookupError) {
+
+            showStateLookupProblem();
+
+            return;
+        }
+
+        if (!entry) {
+
+            currentEntry = null;
+
+            showJoinState();
+
+            showMessage(
+                "有効な参加情報が見つかりません。すでに辞退済みの可能性があります。",
+                "info"
+            );
+
+            return;
+        }
+
+        const chatOnly =
+            isChatOnlyEntry(entry);
+
+        const watching =
+            isWatchingEntry(entry);
+
+        const prompt =
+            chatOnly
+                ? "チャットのみ利用を終了しますか？"
+                : watching
+                    ? "観戦を辞退してロビーから退出しますか？"
+                    : entry.status === "playing"
+                        ? "メインロビーから退出して参加を辞退しますか？"
+                        : "参加を辞退しますか？";
+
+        if (!confirm(prompt)) {
+            return;
+        }
+
+        if (cancelButton) {
+
+            cancelButton.disabled = true;
+
+            cancelButton.textContent =
+                "処理中…";
+        }
+
+        if (joinButton) {
+            joinButton.disabled = true;
+        }
+
+        if (viewerButton) {
+            viewerButton.disabled = true;
+        }
+
+        // 本人確認トークン付きの辞退RPCを呼ぶ
+        const updated =
+            await callParticipantRpc(
+                "cancel_url_queue",
+                entry
+            );
+
+        if (
+            updated.status !== "cancelled" ||
+            updated.lobby_state === "playing" ||
+            updated.lobby_state === "watching"
+        ) {
+
+            throw new Error(
+                "辞退後の状態をデータベース上で確認できませんでした。"
+            );
+        }
+
+        localStorage.removeItem(
+            `yp_participant_cancel_token_${entry.id}`
         );
 
+        currentEntry = null;
 
         showJoinState();
 
-        return;
-    }
-
-
-    const isViewer =
-        entry.status ===
-        "viewer";
-
-
-    const confirmed =
-        confirm(
-            isViewer
-                ? "チャットのみ利用を終了しますか？"
-                : "参加を辞退しますか？"
+        showMessage(
+            chatOnly
+                ? "チャットのみ利用を終了しました。"
+                : "参加を辞退しました。<br>また参加したくなったら、もう一度受付できます。",
+            "info"
         );
 
-
-    if (!confirmed) {
-        return;
-    }
-
-
-    cancelButton.disabled =
-        true;
-
-    cancelButton.textContent =
-        isViewer
-            ? "終了処理中…"
-            : "辞退処理中…";
-
-
-    const {
-        error
-    } =
-        await supabaseClient
-            .from(
-                "participants"
-            )
-            .update({
-                status:
-                    "cancelled"
-            })
-            .eq(
-                "id",
-                entry.id
-            )
-            .eq(
-                "user_id",
-                URL_USER_ID
-            )
-            .eq(
-                "session_id",
-                currentSessionId
-            );
-
-
-    cancelButton.disabled =
-        false;
-
-
-    if (error) {
+    } catch (error) {
 
         console.error(
-            isViewer
-                ? "チャットのみ利用終了エラー:"
-                : "辞退エラー:",
+            "辞退処理エラー:",
             error
         );
 
-
-        cancelButton.textContent =
-            isViewer
-                ? "チャットのみ利用を終了"
-                : "参加を辞退する";
-
-
         showMessage(
-            isViewer
-                ? "チャットのみ利用の終了に失敗しました。"
-                : "辞退処理に失敗しました。",
+            `処理に失敗しました。<br>${escapeHtml(error?.message || "原因不明のエラー")}`,
             "error"
         );
 
-        return;
+        // 失敗時には画面だけ未参加状態にしない
+        if (entry) {
+
+            if (isChatOnlyEntry(entry)) {
+
+                showViewerState(entry);
+
+            } else if (isWatchingEntry(entry)) {
+
+                showWatchingState(entry);
+
+            } else if (entry.status === "playing") {
+
+                showPlayingState(entry);
+
+            } else {
+
+                await showWaitingState(entry);
+            }
+
+        } else if (lastEntryLookupError || lastSessionLookupError) {
+
+            showStateLookupProblem();
+        }
+
+    } finally {
+
+        if (
+            cancelButton &&
+            !cancelButton.classList.contains("hidden")
+        ) {
+
+            if (
+                lastEntryLookupError ||
+                lastSessionLookupError
+            ) {
+
+                cancelButton.disabled = true;
+
+                cancelButton.textContent =
+                    "参加状態を確認できません";
+
+            } else {
+
+                cancelButton.disabled = false;
+
+                if (currentEntry) {
+
+                    cancelButton.textContent =
+                        isChatOnlyEntry(currentEntry)
+                            ? "チャットのみ利用を終了"
+                            : isWatchingEntry(currentEntry)
+                                ? "観戦を辞退する"
+                                : "参加を辞退する";
+                }
+            }
+        }
+
+        pageBusy = false;
     }
-
-
-    showJoinState();
-
-
-    showMessage(
-        isViewer
-            ? "チャットのみ利用を終了しました。"
-            : `参加を辞退しました。<br>
-            また参加したくなったら、
-            もう一度受付できます。`,
-        "info"
-    );
 }
 
 
 // ========================================
-// ページを開いた時
+// ページ起動時の状態復元
 // ========================================
 
 async function initialize() {
 
-    nameInput.disabled =
-        true;
+    ensureViewerButton();
 
-    joinButton.disabled =
-        true;
+    if (nameInput) {
+        nameInput.disabled = true;
+    }
 
-    viewerButton.disabled =
-        true;
+    if (joinButton) {
 
-    joinButton.textContent =
-        "確認中…";
+        joinButton.disabled = true;
 
-    viewerButton.textContent =
-        "確認中…";
+        joinButton.textContent =
+            "確認中…";
+    }
 
+    if (viewerButton) {
+
+        viewerButton.disabled = true;
+
+        viewerButton.textContent =
+            "確認中…";
+    }
 
     showMessage(
         "現在の参加受付を確認しています…",
         ""
     );
 
+    if (!(await loadCurrentSession())) {
 
-    // ------------------------------------
-    // app_settingsから現在配信取得
-    // ------------------------------------
-
-    const sessionLoaded =
-        await loadCurrentSession();
-
-
-    if (!sessionLoaded) {
-
-        showNoSessionState();
+        if (lastSessionLookupError) {
+            showStateLookupProblem();
+        } else {
+            showNoSessionState();
+        }
 
         return;
     }
-
-
-    // ------------------------------------
-    // この端末の有効参加状態
-    // waiting / viewer
-    // ------------------------------------
 
     const entry =
         await getMyActiveEntry();
 
+    if (lastEntryLookupError) {
 
-    if (entry) {
-
-        await ensureCancelToken(
-            entry
-        );
-
-
-        if (
-            entry.status ===
-            "viewer"
-        ) {
-
-            showViewerState(
-                entry
-            );
-
-        } else {
-
-            await showWaitingState(
-                entry
-            );
-        }
-
+        showStateLookupProblem();
 
         return;
     }
 
+    currentEntry = entry;
 
-    // ------------------------------------
-    // 未参加
-    // ------------------------------------
+    if (!entry) {
 
-    showJoinState();
+        showJoinState();
 
+        showMessage(
+            "",
+            ""
+        );
 
-    showMessage(
-        "",
-        ""
-    );
+        return;
+    }
+
+    // token取得に失敗しても登録状態の表示は維持する
+    const token =
+        await ensureCancelToken(entry);
+
+    if (!token) {
+
+        console.warn(
+            "本人確認tokenを取得できませんでした。操作時に再取得を試みます。"
+        );
+    }
+
+    if (isChatOnlyEntry(entry)) {
+
+        showViewerState(entry);
+
+    } else if (isWatchingEntry(entry)) {
+
+        showWatchingState(entry);
+
+    } else if (entry.status === "playing") {
+
+        showPlayingState(entry);
+
+    } else {
+
+        await showWaitingState(entry);
+    }
 }
 
 
 // ========================================
-// イベント
+// イベント登録
 // ========================================
 
-joinButton.addEventListener(
-    "click",
-    joinQueue
-);
+ensureViewerButton();
 
+if (joinButton) {
 
-viewerButton.addEventListener(
-    "click",
-    joinAsViewer
-);
+    joinButton.addEventListener(
+        "click",
+        joinQueue
+    );
+}
 
+if (cancelButton) {
 
-cancelButton.addEventListener(
-    "click",
-    cancelQueue
-);
+    cancelButton.addEventListener(
+        "click",
+        cancelQueue
+    );
+}
 
+if (nameInput) {
 
-nameInput.addEventListener(
-    "keydown",
-    function(event) {
+    nameInput.addEventListener(
+        "keydown",
+        event => {
 
-        if (
-            event.key ===
-            "Enter"
-        ) {
+            if (event.key === "Enter") {
 
-            event.preventDefault();
+                event.preventDefault();
 
-
-            if (
-                !joinButton.disabled
-            ) {
-
-                joinQueue();
+                if (!joinButton?.disabled) {
+                    joinQueue();
+                }
             }
         }
-    }
-);
+    );
+}
 
 
 // ========================================

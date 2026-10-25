@@ -2,31 +2,19 @@
 <html lang="ja">
 
 <head>
-
     <meta charset="UTF-8">
-
     <meta
         name="viewport"
         content="width=device-width, initial-scale=1.0"
     >
 
-    <title>YP-Manager v1.3.4β</title>
+    <title>YP-Manager v1.3.0</title>
 
-    <link
-        rel="stylesheet"
-        href="style.css"
-    >
-
-    <link
-        rel="stylesheet"
-        href="shared-chat.css"
-    >
-
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="shared-chat.css">
 </head>
 
-
 <body>
-
 
 <!-- URL参加者の一時通知 -->
 <div
@@ -34,26 +22,16 @@
     class="url-join-notification"
     role="status"
     aria-live="polite"
->
-</div>
-
+></div>
 
 <div class="container">
 
-
-    <!-- ================================= -->
     <!-- タイトル -->
-    <!-- ================================= -->
-
-    <h1>
-        🎮 YP-Manager
-    </h1>
-
+    <h1>🎮 YP-Manager</h1>
 
     <p class="subtitle">
-        参加型待機列管理 v1.3.4β
+        参加型待機列管理 v1.3.0
     </p>
-
 
     <p
         id="sessionStatus"
@@ -62,7 +40,70 @@
         現在の配信を確認中…
     </p>
 
+    <!-- ================================= -->
+    <!-- 配信画面の順番待ちリスト表示 -->
+    <!-- ================================= -->
 
+    <div
+        id="queueDisplayArea"
+        style="
+            margin: 16px 0 22px;
+            padding: 14px;
+            background: #363636;
+            border-radius: 12px;
+            text-align: center;
+        "
+    >
+
+        <div
+            style="
+                font-size: 15px;
+                font-weight: bold;
+                color: #fff;
+                margin-bottom: 6px;
+            "
+        >
+            📺 配信画面の順番待ちリスト
+        </div>
+
+        <div
+            style="
+                font-size: 13px;
+                color: #bbb;
+                margin-bottom: 10px;
+            "
+        >
+            OBSに表示する順番待ちリストを切り替えます
+        </div>
+
+        <button
+            id="queueDisplayToggle"
+            type="button"
+            style="
+                width: 100%;
+                padding: 12px;
+                border: none;
+                border-radius: 9px;
+                font-size: 18px;
+                font-weight: bold;
+                cursor: pointer;
+            "
+        >
+            設定を読み込み中…
+        </button>
+
+        <p
+            id="queueDisplayStatus"
+            style="
+                font-size: 12px;
+                color: #bbb;
+                margin: 10px 0 0;
+            "
+        >
+            設定を確認しています
+        </p>
+
+    </div>
 
     <!-- ================================= -->
     <!-- 再参加受付 -->
@@ -89,7 +130,6 @@
             2試合終了後の再参加
         </div>
 
-
         <button
             id="rejoinToggle"
             type="button"
@@ -108,23 +148,16 @@
 
     </div>
 
-
-
     <!-- ================================= -->
     <!-- 部屋管理 -->
     <!-- ================================= -->
 
     <section
         id="roomManagementSection"
-        style="
-            margin-bottom: 28px;
-        "
+        style="margin-bottom: 28px;"
     >
 
-        <h2>
-            🏠 部屋管理
-        </h2>
-
+        <h2>🏠 部屋管理</h2>
 
         <div
             style="
@@ -144,7 +177,6 @@
             >
                 視聴者用の待機部屋を作成できます
             </div>
-
 
             <div
                 style="
@@ -170,7 +202,6 @@
                     "
                 >
 
-
                 <input
                     id="moderatorNameInput"
                     type="text"
@@ -186,7 +217,6 @@
                         font-size: 15px;
                     "
                 >
-
 
                 <button
                     id="createRoomButton"
@@ -209,9 +239,7 @@
 
         </div>
 
-
         <!-- 部屋一覧 -->
-
         <div id="roomList">
 
             <div
@@ -224,8 +252,6 @@
         </div>
 
     </section>
-
-
 
     <!-- ================================= -->
     <!-- 手動追加 -->
@@ -241,7 +267,6 @@
             autocomplete="off"
         >
 
-
         <button
             id="addButton"
             type="button"
@@ -251,25 +276,17 @@
 
     </div>
 
-
-
     <!-- ================================= -->
     <!-- 待機中 -->
     <!-- ================================= -->
 
     <section>
 
-        <h2>
-            🟡 待機中
-        </h2>
+        <h2>🟡 待機中</h2>
 
-
-        <div id="waitingList">
-        </div>
+        <div id="waitingList"></div>
 
     </section>
-
-
 
     <!-- ================================= -->
     <!-- 参加中 -->
@@ -277,10 +294,7 @@
 
     <section>
 
-        <h2>
-            🟢 参加中
-        </h2>
-
+        <h2>🟢 参加中</h2>
 
         <div class="buttons">
 
@@ -294,13 +308,9 @@
 
         </div>
 
-
-        <div id="playingList">
-        </div>
+        <div id="playingList"></div>
 
     </section>
-
-
 
     <!-- ================================= -->
     <!-- 終了履歴（処理用・画面では非表示） -->
@@ -308,12 +318,9 @@
 
     <section style="display: none;">
 
-        <div id="finishedList">
-        </div>
+        <div id="finishedList"></div>
 
     </section>
-
-
 
     <!-- ================================= -->
     <!-- 辞退 -->
@@ -321,17 +328,11 @@
 
     <section>
 
-        <h2>
-            🔴 辞退
-        </h2>
+        <h2>🔴 辞退</h2>
 
-
-        <div id="cancelledList">
-        </div>
+        <div id="cancelledList"></div>
 
     </section>
-
-
 
     <!-- ================================= -->
     <!-- チャットのみ利用者 -->
@@ -339,17 +340,11 @@
 
     <section>
 
-        <h2>
-            💬 チャット利用者
-        </h2>
+        <h2>💬 チャット利用者</h2>
 
-
-        <div id="chatViewerList">
-        </div>
+        <div id="chatViewerList"></div>
 
     </section>
-
-
 
     <!-- ================================= -->
     <!-- URL参加者 全体共有チャット -->
@@ -364,14 +359,12 @@
             💬 URL参加者 全体共有チャット
         </div>
 
-
         <div
             id="sharedChatStatus"
             class="shared-chat-note"
         >
             チャットを確認中…
         </div>
-
 
         <div
             id="sharedChatList"
@@ -380,23 +373,16 @@
 
     </section>
 
-
 </div>
-
-
 
 <!-- ================================= -->
 <!-- Supabase -->
 <!-- ================================= -->
 
-<script
-    src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2">
-</script>
-
-
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <!-- ================================= -->
-<!-- YP-Manager -->
+<!-- YP-Manager既存機能 -->
 <!-- ================================= -->
 
 <script src="script.js"></script>
@@ -419,6 +405,222 @@
 <!-- URL参加者チャット閲覧 -->
 <script src="chat-viewer.js"></script>
 
-</body>
+<!-- 自動参加・観戦ローテーション -->
+<script src="auto-lobby.js"></script>
 
+<!-- 人数制限 -->
+<script src="main-lobby-settings.js"></script>
+
+<!-- 自動ローテート管理 -->
+<script src="main-lobby-rotation.js"></script>
+
+<!-- <script src="auto-lobby.js"></script> -->
+
+<!-- ================================= -->
+<!-- 配信待機リスト ON / OFF -->
+<!-- ================================= -->
+
+<script>
+"use strict";
+
+const queueDisplayToggleButton =
+    document.getElementById(
+        "queueDisplayToggle"
+    );
+
+const queueDisplayStatusText =
+    document.getElementById(
+        "queueDisplayStatus"
+    );
+
+let queueDisplayEnabled = true;
+
+let queueDisplayBusy = false;
+
+
+/* ボタンの見た目を更新 */
+function renderQueueDisplayButton() {
+
+    if (queueDisplayEnabled) {
+
+        queueDisplayToggleButton.textContent =
+            "📺 順番待ちリスト表示 ON";
+
+        queueDisplayToggleButton.style.background =
+            "#39b54a";
+
+        queueDisplayToggleButton.style.color =
+            "#ffffff";
+
+        queueDisplayStatusText.textContent =
+            "配信画面に順番待ちリストを表示します";
+
+    } else {
+
+        queueDisplayToggleButton.textContent =
+            "📺 順番待ちリスト表示 OFF";
+
+        queueDisplayToggleButton.style.background =
+            "#555555";
+
+        queueDisplayToggleButton.style.color =
+            "#ffffff";
+
+        queueDisplayStatusText.textContent =
+            "配信画面の順番待ちリストを非表示にします";
+
+    }
+
+}
+
+
+/* 保存済み設定を読み込む */
+async function loadQueueDisplaySetting() {
+
+    queueDisplayToggleButton.disabled = true;
+
+    try {
+
+        const {
+            data,
+            error
+        } = await supabaseClient
+            .from("app_settings")
+            .select("value")
+            .eq("key", "stream_queue_visible")
+            .maybeSingle();
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        /*
+         * 設定が存在しなければ初期状態はON。
+         * 実際の保存形式は既存の設定に合わせて文字列を使う。
+         */
+        if (!data) {
+
+            queueDisplayEnabled = true;
+
+        } else {
+
+            queueDisplayEnabled =
+                String(data.value) === "true";
+
+        }
+
+
+        renderQueueDisplayButton();
+
+    } catch (error) {
+
+        console.error(
+            "順番待ちリスト表示設定の取得エラー:",
+            error
+        );
+
+        queueDisplayStatusText.textContent =
+            "設定の読み込みに失敗しました。通信を確認してください。";
+
+        queueDisplayToggleButton.textContent =
+            "再読み込みしてください";
+
+    } finally {
+
+        queueDisplayToggleButton.disabled = false;
+
+    }
+
+}
+
+
+/* ON / OFFを切り替えてSupabaseに保存 */
+async function toggleQueueDisplaySetting() {
+
+    if (queueDisplayBusy) {
+        return;
+    }
+
+    queueDisplayBusy = true;
+
+    queueDisplayToggleButton.disabled = true;
+
+    queueDisplayToggleButton.textContent =
+        "変更を保存中…";
+
+
+    const newValue =
+        !queueDisplayEnabled;
+
+
+    try {
+
+        const {
+            error
+        } = await supabaseClient
+            .from("app_settings")
+            .upsert(
+                {
+                    key: "stream_queue_visible",
+
+                    value: String(newValue),
+
+                    updated_at:
+                        new Date().toISOString()
+                },
+                {
+                    onConflict: "key"
+                }
+            );
+
+
+        if (error) {
+            throw error;
+        }
+
+
+        queueDisplayEnabled = newValue;
+
+        renderQueueDisplayButton();
+
+    } catch (error) {
+
+        console.error(
+            "順番待ちリスト表示設定の保存エラー:",
+            error
+        );
+
+        alert(
+            "表示設定を保存できませんでした。\n通信状態やSupabaseの設定を確認してください。"
+        );
+
+        queueDisplayStatusText.textContent =
+            "保存に失敗しました。設定は変更されていません。";
+
+        renderQueueDisplayButton();
+
+    } finally {
+
+        queueDisplayBusy = false;
+
+        queueDisplayToggleButton.disabled = false;
+
+    }
+
+}
+
+
+queueDisplayToggleButton.addEventListener(
+    "click",
+    toggleQueueDisplaySetting
+);
+
+
+loadQueueDisplaySetting();
+
+</script>
+
+</body>
 </html>
