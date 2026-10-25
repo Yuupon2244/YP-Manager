@@ -2,7 +2,13 @@
 // YP-Manager メインロビー自動補充・試合ローテーション
 // ========================================
 // script.js / rooms.js / main-lobby-settings.js の後に読み込む。
-// 古い auto-lobby.js は併用しない（index.htmlで無効化する）。
+// 古い auto-lobby.js は併用しない。
+//
+// 動作:
+// ・個人の2試合終了では即時補充しない
+// ・待機列には再参加者を最後尾に追加する
+// ・全体の試合終了操作後に待機列から自動補充する
+// ・バックグラウンドでの自動補充は行わない
 
 (function () {
     "use strict";
@@ -143,8 +149,17 @@
         const x = Number(a?.display_order);
         const y = Number(b?.display_order);
 
-        const xHasOrder = Number.isFinite(x);
-        const yHasOrder = Number.isFinite(y);
+        const xHasOrder =
+            a?.display_order !== null &&
+            a?.display_order !== undefined &&
+            String(a.display_order).trim() !== "" &&
+            Number.isFinite(x);
+
+        const yHasOrder =
+            b?.display_order !== null &&
+            b?.display_order !== undefined &&
+            String(b.display_order).trim() !== "" &&
+            Number.isFinite(y);
 
         if (xHasOrder && yHasOrder && x !== y) {
             return x - y;
@@ -174,8 +189,7 @@
 
 
     // ========================================
-    // メインロビーの人数を取得
-    // 配信者本人はリスナー定員に含めない
+    // メインロビーの人数
     // ========================================
 
     function activeMembers() {
@@ -215,21 +229,16 @@
     // ========================================
     // メイン待機列
     //
-    // 重要：
-    // 画面上の待機一覧に表示されている人を候補にする。
-    // room_id の有無だけを理由に候補から除外しない。
-    //
-    // 優先順位：
-    // 1. 初回参加待ちの人
-    // 2. display_order の昇順
-    // 3. joined_at の古い順
+    // 初回参加を優先し、それ以外は表示順。
+    // room_id がある待機部屋所属者は対象外。
     // ========================================
 
     function isMainWaitingCandidate(person) {
         return (
             !isChatOnly(person) &&
             !isHost(person) &&
-            person.status === "waiting"
+            person.status === "waiting" &&
+            !person.room_id
         );
     }
 
@@ -303,7 +312,7 @@
 
 
     // ========================================
-    // 既存管理画面との連携
+    // 既存画面との連携
     // ========================================
 
     window.getRoomCapacity = () => capacity;
@@ -317,12 +326,7 @@
 
     // ========================================
     // 待機列からメインロビーへ自動補充
-    //
-    // 定員9人の場合：
-    // 参加中8人＋観戦1人
-    //
-    // 定員N人の場合：
-    // 参加中最大N-1人＋観戦1人
+    // 明示的な試合終了操作からのみ呼び出す
     // ========================================
 
     async function autoFillLobby() {
@@ -342,7 +346,6 @@
 
             let active = activeMembers();
 
-            // 定員を超えている場合は既存メンバーを勝手に退出させない。
             if (active.length > cap) {
                 console.warn(
                     `[Main Lobby] 定員超過中 ${active.length}/${cap}。既存メンバーは自動退出させません。`
@@ -353,7 +356,7 @@
 
             let watchers = watchingMembers();
 
-            // 満員なのに観戦者がいなければ、最後尾を観戦にする。
+            // 満員なのに観戦者がいない場合、最後尾を観戦にする。
             if (
                 active.length === cap &&
                 watchers.length === 0
@@ -403,7 +406,6 @@
                     nextState = "watching";
 
                 } else {
-                    // 参加中N-1人＋観戦1人で満員。
                     break;
                 }
 
@@ -415,9 +417,11 @@
                 );
 
                 await updateState(candidate, nextState);
+
+                // DBの状態を再取得してから次の人を決める。
+                await loadParticipants();
             }
 
-            // 最終的に満員なら観戦枠を1人に整える。
             active = activeMembers();
             watchers = watchingMembers();
 
@@ -455,6 +459,27 @@
     }
 
 
+    // ========================================
+    // 外部から待機列の自動補充を呼び出す
+    // 「全員2試合終了」の処理後に利用する
+    // ========================================
+
+    window.ypRotateWaitingQueue = async function () {
+        if (
+            autoBusy ||
+            roundBusy ||
+            suppressAuto ||
+            !currentSessionId
+        ) {
+            return;
+        }
+
+        await autoFillLobby();
+        await loadParticipants();
+        repaint();
+    };
+
+
     function repaint() {
         if (typeof render === "function") {
             render();
@@ -466,6 +491,7 @@
 
     // ========================================
     // 試合終了・自動ローテーション
+    // 「今の試合終了」ボタンからのみ実行する
     // ========================================
 
     async function finishRoundAndRotate() {
@@ -515,9 +541,7 @@
         let finishedTwo = 0;
 
         try {
-            // --------------------------------
-            // 1. 参加中の人だけ試合数を＋1
-            // --------------------------------
+            // 1. 参加中の人だけ試合数を＋1する。
 
             for (const snapshot of currentPlayers) {
                 try {
@@ -635,9 +659,7 @@
             await loadParticipants();
 
 
-            // --------------------------------
-            // 2. 前の観戦者（最後尾）を参加中へ戻す
-            // --------------------------------
+            // 2. 前の観戦者を参加中へ戻す。
 
             let watcherPromoted = false;
 
@@ -662,9 +684,7 @@
             }
 
 
-            // --------------------------------
-            // 3. 残った元参加者の最後尾を新しい観戦者にする
-            // --------------------------------
+            // 3. 残った元参加者の最後尾を新しい観戦者にする。
 
             if (watcherPromoted) {
                 const survivors =
@@ -689,22 +709,20 @@
             }
 
 
-            // --------------------------------
-            // 4. 空いた枠を待機列の先頭から補充
-            // --------------------------------
+            // 4. 明示的な試合終了操作の後だけ空き枠を補充する。
 
             suppressAuto = false;
 
-            await autoFillLobby();
+            // roundBusy は finally で解除するため、
+            // ここでは直接補充せず、finally 後に実行する。
 
             await loadParticipants();
-
             repaint();
 
             let message =
                 `${success}人の試合数を更新しました。\n` +
                 `${finishedTwo}人が2試合終了となり、再参加待機へ移動しました。\n` +
-                "観戦枠を交代し、待機列から自動補充しました。";
+                "待機列から自動交代します。";
 
             if (failed.length) {
                 message +=
@@ -735,13 +753,18 @@
 
             await loadParticipants();
 
-            setTimeout(autoFillLobby, 0);
+            // 明示的に試合終了ボタンを押した場合だけ補充する。
+            setTimeout(async () => {
+                await autoFillLobby();
+                await loadParticipants();
+                repaint();
+            }, 0);
         }
     }
 
 
     // ========================================
-    // 既存の「今の試合終了」ボタンを差し替える
+    // 「今の試合終了」ボタンを差し替える
     // ========================================
 
     function bindRoundButton() {
@@ -867,7 +890,7 @@
 
 
     // ========================================
-    // 配信者本人の名前を定員計算から除外する設定
+    // 配信者名設定
     // ========================================
 
     function addHostNameControl() {
@@ -1030,7 +1053,7 @@
 
             repaint();
 
-            await autoFillLobby();
+            // 設定保存時には自動補充しない。
 
         } catch (error) {
             console.error(
@@ -1050,7 +1073,8 @@
 
 
     // ========================================
-    // 定員設定変更後に新しい値を再取得
+    // 定員設定変更
+    // 設定変更だけでは自動補充しない
     // ========================================
 
     function bindCapacitySaveRefresh() {
@@ -1075,8 +1099,6 @@
                 window.getRoomCapacity = () => capacity;
 
                 updateDashboard();
-
-                await autoFillLobby();
             }, 800);
         });
     }
@@ -1084,6 +1106,7 @@
 
     // ========================================
     // 起動
+    // 起動時も空き枠を勝手に埋めない
     // ========================================
 
     async function initialize() {
@@ -1101,7 +1124,7 @@
 
         updateDashboard();
 
-        await autoFillLobby();
+        // ここでは autoFillLobby() を実行しない。
     }
 
 
@@ -1114,7 +1137,11 @@
     );
 
 
-    // 2.5秒ごとに待機列を確認し、空き枠を補充する。
+    // ========================================
+    // 定期処理
+    // 表示の更新だけ行い、自動補充はしない
+    // ========================================
+
     setInterval(async () => {
         if (roundBusy || suppressAuto) {
             return;
@@ -1132,7 +1159,7 @@
 
         updateDashboard();
 
-        await autoFillLobby();
+        // 重要：ここで autoFillLobby() は呼ばない。
     }, 2500);
 
 })();
