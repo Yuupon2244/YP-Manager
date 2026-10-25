@@ -800,11 +800,10 @@ async function sendParticipantChatMessage() {
                     p_cancel_token:
                         token,
 
-                    p_message:
-                        text,
-
-                    p_image_url:
-                        imageUrl,
+p_message:
+    text || (imageUrl ? "📷 画像" : ""),
+p_image_url:
+    imageUrl,
 
                     p_image_path:
                         imagePath
