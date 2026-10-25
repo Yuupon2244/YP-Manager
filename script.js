@@ -3626,7 +3626,14 @@ async function finishAllPlaying() {
         }
     }
 
-    await loadParticipants();
+        await loadParticipants();
+
+    // 全員の2試合終了処理が済んでから待機列を補充する。
+    if (
+        typeof window.ypRotateWaitingQueue === "function"
+    ) {
+        await window.ypRotateWaitingQueue();
+    }
 
     finishAllPlayingButton.disabled =
         false;
