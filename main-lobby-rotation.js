@@ -147,21 +147,43 @@
 
 
     function orderCompare(a, b) {
+    const hasOrder = person =>
+        person?.display_order !== null &&
+        person?.display_order !== undefined &&
+        String(person.display_order).trim() !== "" &&
+        Number.isFinite(Number(person.display_order));
 
-        const x = Number(a?.display_order);
-        const y = Number(b?.display_order);
+    const aHasOrder = hasOrder(a);
+    const bHasOrder = hasOrder(b);
 
-        const xv = Number.isFinite(x);
-        const yv = Number.isFinite(y);
+    const x = Number(a?.display_order);
+    const y = Number(b?.display_order);
 
-        if (xv && yv && x !== y) return x - y;
-        if (xv && !yv) return -1;
-        if (!xv && yv) return 1;
+    if (aHasOrder && bHasOrder && x !== y) {
+        return x - y;
+    }
 
-        return String(a?.joined_at || "").localeCompare(
+    if (aHasOrder && !bHasOrder) {
+        return -1;
+    }
+
+    if (!aHasOrder && bHasOrder) {
+        return 1;
+    }
+
+    const joinedCompare =
+        String(a?.joined_at || "").localeCompare(
             String(b?.joined_at || "")
         );
+
+    if (joinedCompare !== 0) {
+        return joinedCompare;
     }
+
+    return String(a?.id || "").localeCompare(
+        String(b?.id || "")
+    );
+}
 
 
     // ========================================
@@ -223,35 +245,24 @@
 
 
     function mainWaitingQueue() {
+    return participants
+        .filter(isMainWaitingCandidate)
+        .sort((a, b) => {
+            // 初回参加の優先順位は維持
+            const aNew =
+                a.first_participation_pending === true ? 0 : 1;
 
-        const waiting = participants
-            .filter(isMainWaitingCandidate)
-            .sort(orderCompare);
+            const bNew =
+                b.first_participation_pending === true ? 0 : 1;
 
-        const newcomers = waiting.filter(
-            person =>
-                person.first_participation_pending === true
-        );
+            if (aNew !== bNew) {
+                return aNew - bNew;
+            }
 
-        const exchange = waiting.filter(
-            person =>
-                stateOf(person) === "exchange"
-        );
-
-        const normal = waiting.filter(
-            person =>
-                person.first_participation_pending !== true &&
-                stateOf(person) !== "exchange"
-        );
-
-        // 既存の優先順位を維持する。
-        return [
-            ...newcomers,
-            ...exchange,
-            ...normal
-        ];
-    }
-
+            // それ以外は、実際の待機順に従う
+            return orderCompare(a, b);
+        });
+}
 
     function updateLocal(id, patch) {
 
