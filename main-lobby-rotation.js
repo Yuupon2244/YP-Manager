@@ -5,10 +5,13 @@
 // 古い auto-lobby.js は併用しない。
 //
 // 動作:
-// ・個人の2試合終了では即時補充しない
-// ・待機列には再参加者を最後尾に追加する
-// ・全体の試合終了操作後に待機列から自動補充する
-// ・バックグラウンドでの自動補充は行わない
+// ・個別の2試合終了では自動補充しない
+// ・全員2試合終了でも自動補充しない
+// ・「今の試合終了（試合数＋1）」を押したときだけ補充する
+// ・試合数が1になった人は参加中に残す
+// ・試合数が2になった人は再参加待機の最後尾へ移動
+// ・空いた枠を既存の待機列から順番に補充する
+// ・観戦者の自動入れ替えはしない
 
 (function () {
     "use strict";
@@ -229,8 +232,8 @@
     // ========================================
     // メイン待機列
     //
-    // 初回参加を優先し、それ以外は表示順。
-    // room_id がある待機部屋所属者は対象外。
+    // 初回参加者を優先し、それ以外は順番どおり。
+    // 待機部屋所属者はメインロビーの候補から除外する。
     // ========================================
 
     function isMainWaitingCandidate(person) {
@@ -289,6 +292,11 @@
             room_id: null
         };
 
+        if (nextState === "playing") {
+            patch.playing_started_at =
+                new Date().toISOString();
+        }
+
         const {
             data,
             error
@@ -325,8 +333,15 @@
 
 
     // ========================================
-    // 待機列からメインロビーへ自動補充
-    // 明示的な試合終了操作からのみ呼び出す
+    // 空いた枠を待機列から補充
+    //
+    // この関数は「今の試合終了」ボタンを押した
+    // タイミングでのみ実行する。
+    //
+    // 定員N人の場合：
+    // 参加中最大N-1人＋観戦1人
+    //
+    // 既存の観戦者は入れ替えない。
     // ========================================
 
     async function autoFillLobby() {
@@ -346,39 +361,11 @@
 
             let active = activeMembers();
 
-            if (active.length > cap) {
-                console.warn(
-                    `[Main Lobby] 定員超過中 ${active.length}/${cap}。既存メンバーは自動退出させません。`
+            if (active.length >= cap) {
+                console.log(
+                    "[Main Lobby] 空き枠なし。補充しません。"
                 );
-
                 return;
-            }
-
-            let watchers = watchingMembers();
-
-            // 満員なのに観戦者がいない場合、最後尾を観戦にする。
-            if (
-                active.length === cap &&
-                watchers.length === 0
-            ) {
-                const last = playingMembers().at(-1);
-
-                if (last) {
-                    await updateState(last, "watching");
-                }
-            }
-
-            // 観戦者が複数いる場合は最後尾だけ残す。
-            watchers = watchingMembers();
-
-            if (watchers.length > 1) {
-                const keepId = watchers.at(-1).id;
-
-                for (const watcher of watchers) {
-                    if (watcher.id !== keepId) {
-                        await updateState(watcher, "playing");
-                    }
-                }
             }
 
             let guard = 0;
@@ -389,10 +376,12 @@
             ) {
                 guard++;
 
-                // 毎回、最新の待機列の先頭を選ぶ。
+                // 常に最新の待機列から先頭を取得する。
                 const candidate = mainWaitingQueue()[0];
 
-                if (!candidate) break;
+                if (!candidate) {
+                    break;
+                }
 
                 const playingCount = playingMembers().length;
                 const watchingCount = watchingMembers().length;
@@ -406,6 +395,7 @@
                     nextState = "watching";
 
                 } else {
+                    // 定員に達している場合は待機列に残す。
                     break;
                 }
 
@@ -413,35 +403,20 @@
                     "[Main Lobby] 待機列から補充:",
                     candidate.name,
                     "display_order:",
-                    candidate.display_order
+                    candidate.display_order,
+                    "状態:",
+                    nextState
                 );
 
                 await updateState(candidate, nextState);
 
-                // DBの状態を再取得してから次の人を決める。
+                // DBの最新状態を取得してから次の人を選ぶ。
                 await loadParticipants();
-            }
 
-            active = activeMembers();
-            watchers = watchingMembers();
+                active = activeMembers();
 
-            if (
-                active.length === cap &&
-                watchers.length === 0
-            ) {
-                const last = playingMembers().at(-1);
-
-                if (last) {
-                    await updateState(last, "watching");
-                }
-
-            } else if (watchers.length > 1) {
-                const keepId = watchers.at(-1).id;
-
-                for (const watcher of watchers) {
-                    if (watcher.id !== keepId) {
-                        await updateState(watcher, "playing");
-                    }
+                if (active.length >= cap) {
+                    break;
                 }
             }
 
@@ -453,31 +428,14 @@
                 error
             );
 
+            alert(
+                "待機列からの補充に失敗しました。ブラウザのConsoleを確認してください。"
+            );
+
         } finally {
             autoBusy = false;
         }
     }
-
-
-    // ========================================
-    // 外部から待機列の自動補充を呼び出す
-    // 「全員2試合終了」の処理後に利用する
-    // ========================================
-
-    window.ypRotateWaitingQueue = async function () {
-        if (
-            autoBusy ||
-            roundBusy ||
-            suppressAuto ||
-            !currentSessionId
-        ) {
-            return;
-        }
-
-        await autoFillLobby();
-        await loadParticipants();
-        repaint();
-    };
 
 
     function repaint() {
@@ -490,8 +448,13 @@
 
 
     // ========================================
-    // 試合終了・自動ローテーション
-    // 「今の試合終了」ボタンからのみ実行する
+    // 試合終了＋1・自動補充
+    //
+    // 1. 参加中の試合数を＋1
+    // 2. 2試合になった人は再参加待機の最後尾へ
+    // 3. まだ1試合の人は参加中に残す
+    // 4. 空いた枠を待機列から順番に補充
+    // 5. 観戦者の自動入れ替えはしない
     // ========================================
 
     async function finishRoundAndRotate() {
@@ -504,26 +467,21 @@
                 .slice()
                 .sort(orderCompare);
 
-        const oldWatchers =
-            watchingMembers()
-                .slice()
-                .sort(orderCompare);
-
         const cap = await readCapacity();
 
         if (!currentPlayers.length) {
             alert(
                 "現在、試合数を進める参加中メンバーはいません。"
             );
-
             return;
         }
 
         const ok = confirm(
             `参加中の${currentPlayers.length}人の試合数を＋1します。\n` +
-            "観戦中と配信者本人は試合数に含めません。\n" +
-            "2試合終了した人は再参加待機へ戻し、観戦枠を交代して、待機列の先頭から補充します。\n" +
-            `リスナー定員：${cap}人（最大${cap - 1}人参加＋観戦1人）\n\n実行しますか？`
+            "2試合になった人は再参加待機の最後尾へ移動します。\n" +
+            "まだ1試合の人は参加中に残り、空いた枠を待機列の先頭から補充します。\n" +
+            "観戦者の入れ替えは行いません。\n" +
+            `リスナー定員：${cap}人\n\n実行しますか？`
         );
 
         if (!ok) return;
@@ -541,7 +499,9 @@
         let finishedTwo = 0;
 
         try {
-            // 1. 参加中の人だけ試合数を＋1する。
+            // --------------------------------
+            // 1. 参加中の人だけ試合数を＋1する
+            // --------------------------------
 
             for (const snapshot of currentPlayers) {
                 try {
@@ -565,6 +525,7 @@
                     }
 
                     if (nextCount >= 2) {
+                        // 2試合終了：現在の参加履歴を終了する。
                         const {
                             data,
                             error
@@ -598,6 +559,8 @@
                             room_id: null
                         });
 
+                        // 終了者を再参加待機の最後尾に追加する。
+                        // 追加前に読み直し、順番番号の重複を防ぐ。
                         await loadParticipants();
 
                         const latest =
@@ -619,12 +582,13 @@
                         finishedTwo++;
 
                     } else {
+                        // 1試合目終了：参加中に残す。
                         const {
                             error
                         } = await supabaseClient
                             .from("participants")
                             .update({
-                                match_count: nextCount,
+                                match_count: 1,
                                 first_participation_pending: false,
                                 lobby_state: "playing",
                                 status: "playing"
@@ -636,7 +600,7 @@
                         if (error) throw error;
 
                         updateLocal(person.id, {
-                            match_count: nextCount,
+                            match_count: 1,
                             first_participation_pending: false,
                             lobby_state: "playing",
                             status: "playing"
@@ -656,73 +620,31 @@
                 }
             }
 
+            // --------------------------------
+            // 2. 試合数更新後の状態を再取得
+            // --------------------------------
+
             await loadParticipants();
 
-
-            // 2. 前の観戦者を参加中へ戻す。
-
-            let watcherPromoted = false;
-
-            const oldBottomWatcher = oldWatchers.at(-1);
-
-            if (oldBottomWatcher) {
-                const latestWatcher =
-                    participants.find(
-                        p =>
-                            p.id === oldBottomWatcher.id &&
-                            p.status === "playing" &&
-                            stateOf(p) === "watching"
-                    );
-
-                if (latestWatcher) {
-                    await updateState(latestWatcher, "playing");
-
-                    watcherPromoted = true;
-
-                    await loadParticipants();
-                }
-            }
-
-
-            // 3. 残った元参加者の最後尾を新しい観戦者にする。
-
-            if (watcherPromoted) {
-                const survivors =
-                    currentPlayers
-                        .map(old =>
-                            participants.find(
-                                p =>
-                                    p.id === old.id &&
-                                    p.status === "playing" &&
-                                    stateOf(p) === "playing"
-                            )
-                        )
-                        .filter(Boolean)
-                        .sort(orderCompare);
-
-                const nextWatcher = survivors.at(-1);
-
-                if (nextWatcher) {
-                    await updateState(nextWatcher, "watching");
-                    await loadParticipants();
-                }
-            }
-
-
-            // 4. 明示的な試合終了操作の後だけ空き枠を補充する。
-
+            // 観戦者の昇格・降格などは行わない。
+            // 空き枠の補充だけを実行するためロックを解除。
             suppressAuto = false;
+            roundBusy = false;
 
-            // roundBusy は finally で解除するため、
-            // ここでは直接補充せず、finally 後に実行する。
+            // --------------------------------
+            // 3. 待機列から空き枠を補充
+            // --------------------------------
+
+            await autoFillLobby();
 
             await loadParticipants();
+
             repaint();
 
             let message =
                 `${success}人の試合数を更新しました。\n` +
                 `${finishedTwo}人が2試合終了となり、再参加待機へ移動しました。\n` +
-                "待機列から自動交代します。";
+                "まだ1試合の人は参加中に残し、空いた枠に待機列から補充しました。";
 
             if (failed.length) {
                 message +=
@@ -733,12 +655,12 @@
 
         } catch (error) {
             console.error(
-                "[Main Lobby] ラウンド交代エラー:",
+                "[Main Lobby] 試合終了＋1エラー:",
                 error
             );
 
             alert(
-                "試合終了後の自動交代でエラーが発生しました。参加者一覧とログを確認してください。"
+                "試合終了後の処理に失敗しました。参加者一覧とブラウザのConsoleを確認してください。"
             );
 
         } finally {
@@ -753,12 +675,7 @@
 
             await loadParticipants();
 
-            // 明示的に試合終了ボタンを押した場合だけ補充する。
-            setTimeout(async () => {
-                await autoFillLobby();
-                await loadParticipants();
-                repaint();
-            }, 0);
+            repaint();
         }
     }
 
@@ -1053,7 +970,7 @@
 
             repaint();
 
-            // 設定保存時には自動補充しない。
+            // 配信者名の設定だけでは自動補充しない。
 
         } catch (error) {
             console.error(
@@ -1106,7 +1023,7 @@
 
     // ========================================
     // 起動
-    // 起動時も空き枠を勝手に埋めない
+    // 起動時には自動補充しない
     // ========================================
 
     async function initialize() {
@@ -1124,7 +1041,7 @@
 
         updateDashboard();
 
-        // ここでは autoFillLobby() を実行しない。
+        // 起動時は autoFillLobby() を呼ばない。
     }
 
 
@@ -1139,7 +1056,7 @@
 
     // ========================================
     // 定期処理
-    // 表示の更新だけ行い、自動補充はしない
+    // 人数表示などの更新だけ。自動補充はしない。
     // ========================================
 
     setInterval(async () => {
@@ -1159,7 +1076,7 @@
 
         updateDashboard();
 
-        // 重要：ここで autoFillLobby() は呼ばない。
+        // 重要：ここでは autoFillLobby() を呼ばない。
     }, 2500);
 
 })();
