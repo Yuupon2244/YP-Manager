@@ -5,13 +5,14 @@
 // 古い auto-lobby.js は併用しない。
 //
 // 動作:
-// ・個別の2試合終了では自動補充しない
-// ・全員2試合終了でも自動補充しない
-// ・「今の試合終了（試合数＋1）」を押したときだけ補充する
-// ・試合数が1になった人は参加中に残す
-// ・試合数が2になった人は再参加待機の最後尾へ移動
-// ・空いた枠を既存の待機列から順番に補充する
-// ・観戦者の自動入れ替えはしない
+// ・手動参加で満員になったら最後尾を観戦にする
+// ・試合終了＋1で試合数を更新する
+// ・2試合になった人は再参加待機の最後尾へ移動
+// ・旧観戦者を参加状態へ戻す
+// ・その一つ上の参加者を観戦状態にする
+// ・空いた枠を待機列の先頭から補充する
+// ・個人／全体の2試合終了では自動補充しない
+// ・定期処理では空き枠を自動補充しない
 
 (function () {
     "use strict";
@@ -30,13 +31,14 @@
     let autoBusy = false;
     let roundBusy = false;
     let suppressAuto = false;
+    let watcherEnforceBusy = false;
 
     let roundButton = null;
     let dashboardObserver = null;
 
 
     // ========================================
-    // メインロビー定員
+    // 定員取得
     // ========================================
 
     async function readCapacity(force = false) {
@@ -49,10 +51,7 @@
         }
 
         try {
-            const {
-                data,
-                error
-            } = await supabaseClient
+            const { data, error } = await supabaseClient
                 .from("app_settings")
                 .select("value")
                 .eq("key", CAPACITY_KEY)
@@ -63,9 +62,7 @@
             const n = Number(data?.value);
 
             capacity =
-                Number.isInteger(n) &&
-                n >= 2 &&
-                n <= 50
+                Number.isInteger(n) && n >= 2 && n <= 50
                     ? n
                     : 9;
 
@@ -86,8 +83,7 @@
                 );
 
                 capacity =
-                    Number.isInteger(fallback) &&
-                    fallback >= 2
+                    Number.isInteger(fallback) && fallback >= 2
                         ? fallback
                         : 9;
 
@@ -97,13 +93,12 @@
         }
 
         window.getRoomCapacity = () => capacity;
-
         return capacity;
     }
 
 
     // ========================================
-    // 名前の正規化・配信者本人の除外
+    // 配信者名・参加者判定
     // ========================================
 
     function normalizeName(value) {
@@ -115,15 +110,12 @@
             .toLocaleLowerCase("ja-JP");
     }
 
-
     function isHost(person) {
         return Boolean(
             hostName &&
-            normalizeName(person?.name) ===
-                normalizeName(hostName)
+            normalizeName(person?.name) === normalizeName(hostName)
         );
     }
-
 
     function isChatOnly(person) {
         return typeof isChatOnlyPerson === "function"
@@ -134,13 +126,10 @@
             );
     }
 
-
     function stateOf(person) {
         return typeof getLobbyState === "function"
             ? getLobbyState(person)
-            : person?.lobby_state ||
-              person?.status ||
-              "waiting";
+            : person?.lobby_state || person?.status || "waiting";
     }
 
 
@@ -149,41 +138,37 @@
     // ========================================
 
     function orderCompare(a, b) {
-        const x = Number(a?.display_order);
-        const y = Number(b?.display_order);
+        const aValue = a?.display_order;
+        const bValue = b?.display_order;
 
-        const xHasOrder =
-            a?.display_order !== null &&
-            a?.display_order !== undefined &&
-            String(a.display_order).trim() !== "" &&
-            Number.isFinite(x);
+        const aHasOrder =
+            aValue !== null &&
+            aValue !== undefined &&
+            String(aValue).trim() !== "" &&
+            Number.isFinite(Number(aValue));
 
-        const yHasOrder =
-            b?.display_order !== null &&
-            b?.display_order !== undefined &&
-            String(b.display_order).trim() !== "" &&
-            Number.isFinite(y);
+        const bHasOrder =
+            bValue !== null &&
+            bValue !== undefined &&
+            String(bValue).trim() !== "" &&
+            Number.isFinite(Number(bValue));
 
-        if (xHasOrder && yHasOrder && x !== y) {
+        const x = Number(aValue);
+        const y = Number(bValue);
+
+        if (aHasOrder && bHasOrder && x !== y) {
             return x - y;
         }
 
-        if (xHasOrder && !yHasOrder) {
-            return -1;
-        }
-
-        if (!xHasOrder && yHasOrder) {
-            return 1;
-        }
+        if (aHasOrder && !bHasOrder) return -1;
+        if (!aHasOrder && bHasOrder) return 1;
 
         const joinedCompare =
             String(a?.joined_at || "").localeCompare(
                 String(b?.joined_at || "")
             );
 
-        if (joinedCompare !== 0) {
-            return joinedCompare;
-        }
+        if (joinedCompare !== 0) return joinedCompare;
 
         return String(a?.id || "").localeCompare(
             String(b?.id || "")
@@ -192,7 +177,7 @@
 
 
     // ========================================
-    // メインロビーの人数
+    // メインロビーの参加者
     // ========================================
 
     function activeMembers() {
@@ -210,30 +195,22 @@
         );
     }
 
-
     function playingMembers() {
         return activeMembers()
-            .filter(person =>
-                stateOf(person) === "playing"
-            )
+            .filter(person => stateOf(person) === "playing")
             .sort(orderCompare);
     }
 
-
     function watchingMembers() {
         return activeMembers()
-            .filter(person =>
-                stateOf(person) === "watching"
-            )
+            .filter(person => stateOf(person) === "watching")
             .sort(orderCompare);
     }
 
 
     // ========================================
     // メイン待機列
-    //
-    // 初回参加者を優先し、それ以外は順番どおり。
-    // 待機部屋所属者はメインロビーの候補から除外する。
+    // 初回参加者を優先し、それ以外は待機順
     // ========================================
 
     function isMainWaitingCandidate(person) {
@@ -244,7 +221,6 @@
             !person.room_id
         );
     }
-
 
     function mainWaitingQueue() {
         return participants
@@ -264,7 +240,6 @@
             });
     }
 
-
     function updateLocal(id, patch) {
         participants = participants.map(person =>
             person.id === id
@@ -275,14 +250,12 @@
 
 
     // ========================================
-    // ロビー状態を変更
+    // ロビー状態変更
     // ========================================
 
     async function updateState(person, nextState) {
         if (!person || !currentSessionId) {
-            throw new Error(
-                "参加者または配信IDがありません。"
-            );
+            throw new Error("参加者または配信IDがありません。");
         }
 
         const patch = {
@@ -297,10 +270,7 @@
                 new Date().toISOString();
         }
 
-        const {
-            data,
-            error
-        } = await supabaseClient
+        const { data, error } = await supabaseClient
             .from("participants")
             .update(patch)
             .eq("id", person.id)
@@ -320,28 +290,178 @@
 
 
     // ========================================
+    // 観戦者をロビー一覧の最後尾にする
+    // ========================================
+
+    async function moveWatcherToBottom(person) {
+        if (!person || !currentSessionId) return;
+
+        const active = activeMembers();
+
+        const orders = active
+            .filter(item => item.id !== person.id)
+            .map(item => Number(item.display_order))
+            .filter(Number.isFinite);
+
+        const maxOrder =
+            orders.length > 0
+                ? Math.max(...orders)
+                : 0;
+
+        const nextOrder = maxOrder + 1;
+
+        const { error } = await supabaseClient
+            .from("participants")
+            .update({
+                display_order: nextOrder
+            })
+            .eq("id", person.id)
+            .eq("session_id", currentSessionId);
+
+        if (error) throw error;
+
+        updateLocal(person.id, {
+            display_order: nextOrder
+        });
+    }
+
+
+    // ========================================
+    // 満員時の観戦枠を調整
+    //
+    // 観戦者がすでに1人いる場合：
+    // その人を維持し、一覧の最後尾へ移動する。
+    //
+    // 観戦者がいない場合：
+    // 最後尾を観戦状態にする。
+    //
+    // 待機列から新しい人を呼ぶ処理はしない。
+    // ========================================
+
+    async function ensureBottomWatcher() {
+        if (
+            watcherEnforceBusy ||
+            autoBusy ||
+            roundBusy ||
+            suppressAuto ||
+            !currentSessionId
+        ) {
+            return;
+        }
+
+        watcherEnforceBusy = true;
+
+        try {
+            const cap = await readCapacity();
+            let active = activeMembers();
+
+            if (active.length < cap) return;
+            if (active.length === 0) return;
+
+            let watchers = watchingMembers();
+
+            if (watchers.length > 1) {
+                // 複数いる場合は順番上の最後尾を維持する。
+                const keepWatcher = watchers.at(-1);
+
+                for (const watcher of watchers) {
+                    if (watcher.id !== keepWatcher.id) {
+                        await updateState(watcher, "playing");
+                    }
+                }
+
+                await loadParticipants();
+
+                watchers = watchingMembers();
+            }
+
+            if (watchers.length === 0) {
+                const bottom = playingMembers().at(-1);
+
+                if (bottom) {
+                    await updateState(bottom, "watching");
+                    await loadParticipants();
+
+                    const latest =
+                        participants.find(p => p.id === bottom.id);
+
+                    if (latest) {
+                        await moveWatcherToBottom(latest);
+                    }
+                }
+
+            } else {
+                // 既存の観戦者は変更せず、表示上の最後尾へ整える。
+                const watcher = watchers[0];
+
+                await moveWatcherToBottom(watcher);
+            }
+
+            await loadParticipants();
+            repaint();
+
+        } catch (error) {
+            console.error(
+                "[Main Lobby] 観戦枠調整エラー:",
+                error
+            );
+
+        } finally {
+            watcherEnforceBusy = false;
+        }
+    }
+
+
+    // ========================================
+    // 手動参加開始後に観戦枠を確認
+    // ========================================
+
+    function bindStartMatchWatcherCheck() {
+        const originalStartMatch = window.startMatch;
+
+        if (
+            typeof originalStartMatch !== "function" ||
+            originalStartMatch.__ypWatcherCheckBound
+        ) {
+            return;
+        }
+
+        const wrappedStartMatch = async function (...args) {
+            const result =
+                await originalStartMatch.apply(this, args);
+
+            await ensureBottomWatcher();
+
+            return result;
+        };
+
+        wrappedStartMatch.__ypWatcherCheckBound = true;
+        window.startMatch = wrappedStartMatch;
+    }
+
+
+    // ========================================
     // 既存画面との連携
     // ========================================
 
     window.getRoomCapacity = () => capacity;
-
-    window.getCurrentLobbyMembers = () =>
-        activeMembers();
+    window.getCurrentLobbyMembers = () => activeMembers();
 
     window.getNextCandidates = (limit = 3) =>
         mainWaitingQueue().slice(0, limit);
 
+    function repaint() {
+        if (typeof render === "function") {
+            render();
+        }
+
+        updateDashboard();
+    }
+
 
     // ========================================
-    // 空いた枠を待機列から補充
-    //
-    // この関数は「今の試合終了」ボタンを押した
-    // タイミングでのみ実行する。
-    //
-    // 定員N人の場合：
-    // 参加中最大N-1人＋観戦1人
-    //
-    // 既存の観戦者は入れ替えない。
+    // 待機列から空いた枠を補充
+    // 試合終了＋1の操作後だけ実行する
     // ========================================
 
     async function autoFillLobby() {
@@ -359,29 +479,10 @@
         try {
             const cap = await readCapacity();
 
-            let active = activeMembers();
-
-            if (active.length >= cap) {
-                console.log(
-                    "[Main Lobby] 空き枠なし。補充しません。"
-                );
-                return;
-            }
-
-            let guard = 0;
-
-            while (
-                activeMembers().length < cap &&
-                guard < cap + 2
-            ) {
-                guard++;
-
-                // 常に最新の待機列から先頭を取得する。
+            while (activeMembers().length < cap) {
                 const candidate = mainWaitingQueue()[0];
 
-                if (!candidate) {
-                    break;
-                }
+                if (!candidate) break;
 
                 const playingCount = playingMembers().length;
                 const watchingCount = watchingMembers().length;
@@ -395,7 +496,6 @@
                     nextState = "watching";
 
                 } else {
-                    // 定員に達している場合は待機列に残す。
                     break;
                 }
 
@@ -409,18 +509,8 @@
                 );
 
                 await updateState(candidate, nextState);
-
-                // DBの最新状態を取得してから次の人を選ぶ。
                 await loadParticipants();
-
-                active = activeMembers();
-
-                if (active.length >= cap) {
-                    break;
-                }
             }
-
-            repaint();
 
         } catch (error) {
             console.error(
@@ -438,32 +528,28 @@
     }
 
 
-    function repaint() {
-        if (typeof render === "function") {
-            render();
-        }
-
-        updateDashboard();
-    }
-
-
     // ========================================
-    // 試合終了＋1・自動補充
+    // 試合終了＋1・自動交代
     //
-    // 1. 参加中の試合数を＋1
-    // 2. 2試合になった人は再参加待機の最後尾へ
-    // 3. まだ1試合の人は参加中に残す
-    // 4. 空いた枠を待機列から順番に補充
-    // 5. 観戦者の自動入れ替えはしない
+    // 1. 参加中の人だけ試合数＋1
+    // 2. 2試合の人は再参加待機へ
+    // 3. 観戦者を参加状態へ戻す
+    // 4. その一つ上の人を観戦状態へ
+    // 5. 空いた枠を待機列から補充
+    // 6. 観戦者を最後尾に整える
     // ========================================
 
     async function finishRoundAndRotate() {
-        if (!currentSessionId || roundBusy) {
-            return;
-        }
+        if (!currentSessionId || roundBusy) return;
 
         const currentPlayers =
             playingMembers()
+                .slice()
+                .sort(orderCompare);
+
+        // 試合終了処理の前に、現在の観戦者を記録しておく。
+        const oldWatchers =
+            watchingMembers()
                 .slice()
                 .sort(orderCompare);
 
@@ -479,8 +565,8 @@
         const ok = confirm(
             `参加中の${currentPlayers.length}人の試合数を＋1します。\n` +
             "2試合になった人は再参加待機の最後尾へ移動します。\n" +
-            "まだ1試合の人は参加中に残り、空いた枠を待機列の先頭から補充します。\n" +
-            "観戦者の入れ替えは行いません。\n" +
+            "現在の観戦者を参加状態にし、その一つ上の人を観戦状態にします。\n" +
+            "空いた枠は待機列の先頭から補充します。\n" +
             `リスナー定員：${cap}人\n\n実行しますか？`
         );
 
@@ -500,15 +586,14 @@
 
         try {
             // --------------------------------
-            // 1. 参加中の人だけ試合数を＋1する
+            // 1. 参加中の人だけ試合数を＋1
             // --------------------------------
 
             for (const snapshot of currentPlayers) {
                 try {
                     const person =
-                        participants.find(
-                            p => p.id === snapshot.id
-                        ) || snapshot;
+                        participants.find(p => p.id === snapshot.id) ||
+                        snapshot;
 
                     const count =
                         typeof getMatchCount === "function"
@@ -520,16 +605,10 @@
 
                     const nextCount = Math.min(2, count + 1);
 
-                    if (nextCount <= count) {
-                        continue;
-                    }
+                    if (nextCount <= count) continue;
 
                     if (nextCount >= 2) {
-                        // 2試合終了：現在の参加履歴を終了する。
-                        const {
-                            data,
-                            error
-                        } = await supabaseClient
+                        const { data, error } = await supabaseClient
                             .from("participants")
                             .update({
                                 status: "finished",
@@ -559,14 +638,11 @@
                             room_id: null
                         });
 
-                        // 終了者を再参加待機の最後尾に追加する。
-                        // 追加前に読み直し、順番番号の重複を防ぐ。
                         await loadParticipants();
 
                         const latest =
-                            participants.find(
-                                p => p.id === person.id
-                            ) || person;
+                            participants.find(p => p.id === person.id) ||
+                            person;
 
                         const created =
                             await createRejoinEntry(latest);
@@ -578,14 +654,11 @@
                         }
 
                         await loadParticipants();
-
                         finishedTwo++;
 
                     } else {
-                        // 1試合目終了：参加中に残す。
-                        const {
-                            error
-                        } = await supabaseClient
+                        // 1試合目終了：参加中のまま残す。
+                        const { error } = await supabaseClient
                             .from("participants")
                             .update({
                                 match_count: 1,
@@ -620,31 +693,120 @@
                 }
             }
 
-            // --------------------------------
-            // 2. 試合数更新後の状態を再取得
-            // --------------------------------
-
             await loadParticipants();
 
-            // 観戦者の昇格・降格などは行わない。
-            // 空き枠の補充だけを実行するためロックを解除。
+
+            // --------------------------------
+            // 2. 旧観戦者を参加状態へ戻す
+            // --------------------------------
+
+            let watcherPromoted = false;
+
+            const oldBottomWatcher = oldWatchers.at(-1);
+
+            if (oldBottomWatcher) {
+                const latestWatcher =
+                    participants.find(
+                        p =>
+                            p.id === oldBottomWatcher.id &&
+                            p.status === "playing" &&
+                            stateOf(p) === "watching"
+                    );
+
+                if (latestWatcher) {
+                    await updateState(latestWatcher, "playing");
+
+                    watcherPromoted = true;
+
+                    await loadParticipants();
+
+                    console.log(
+                        "[Main Lobby] 観戦者を参加状態へ:",
+                        latestWatcher.name
+                    );
+                }
+            }
+
+
+            // --------------------------------
+            // 3. 一つ上の参加者を観戦状態へ
+            // --------------------------------
+
+            let nextWatcherId = null;
+
+            if (watcherPromoted) {
+                const survivors =
+                    currentPlayers
+                        .map(old =>
+                            participants.find(
+                                p =>
+                                    p.id === old.id &&
+                                    p.status === "playing" &&
+                                    stateOf(p) === "playing"
+                            )
+                        )
+                        .filter(Boolean)
+                        .sort(orderCompare);
+
+                const previousBottom = survivors.at(-1);
+
+                if (previousBottom) {
+                    await updateState(previousBottom, "watching");
+
+                    nextWatcherId = previousBottom.id;
+
+                    await loadParticipants();
+
+                    console.log(
+                        "[Main Lobby] 新しい観戦者:",
+                        previousBottom.name
+                    );
+                }
+            }
+
+
+            // --------------------------------
+            // 4. 空いた枠を待機列の先頭から補充
+            // --------------------------------
+
             suppressAuto = false;
             roundBusy = false;
 
-            // --------------------------------
-            // 3. 待機列から空き枠を補充
-            // --------------------------------
-
             await autoFillLobby();
+
+            // --------------------------------
+            // 5. 観戦者を表示上の最後尾に整える
+            // --------------------------------
 
             await loadParticipants();
 
+            let finalWatcher = null;
+
+            if (nextWatcherId) {
+                finalWatcher =
+                    participants.find(p => p.id === nextWatcherId);
+            }
+
+            if (!finalWatcher) {
+                const watchers = watchingMembers();
+                finalWatcher = watchers.at(-1) || null;
+            }
+
+            if (finalWatcher) {
+                await moveWatcherToBottom(finalWatcher);
+            } else {
+                // 観戦者がいない状態で満員なら最後尾を観戦にする。
+                await ensureBottomWatcher();
+            }
+
+            await loadParticipants();
             repaint();
 
             let message =
                 `${success}人の試合数を更新しました。\n` +
                 `${finishedTwo}人が2試合終了となり、再参加待機へ移動しました。\n` +
-                "まだ1試合の人は参加中に残し、空いた枠に待機列から補充しました。";
+                "観戦者を参加状態にし、その一つ上の人を観戦状態にしました。\n" +
+                "空いた枠には待機列から補充しました。";
 
             if (failed.length) {
                 message +=
@@ -674,27 +836,22 @@
             }
 
             await loadParticipants();
-
             repaint();
         }
     }
 
 
     // ========================================
-    // 「今の試合終了」ボタンを差し替える
+    // 試合終了ボタン差し替え
     // ========================================
 
     function bindRoundButton() {
         const original =
-            document.getElementById(
-                "bulkFinishOneMatchButton"
-            );
+            document.getElementById("bulkFinishOneMatchButton");
 
         if (!original) return;
 
-        if (
-            original.dataset.ypRotationBound === "true"
-        ) {
+        if (original.dataset.ypRotationBound === "true") {
             roundButton = original;
             return;
         }
@@ -719,36 +876,25 @@
 
 
     // ========================================
-    // 人数表示
+    // ロビー人数表示
     // ========================================
 
     function updateDashboard() {
         const dashboard =
             document.getElementById("lobbyDashboard");
 
-        if (
-            !dashboard ||
-            dashboard.children.length < 2
-        ) {
-            return;
-        }
+        if (!dashboard || dashboard.children.length < 2) return;
 
         const active = activeMembers();
 
         const playing =
-            active.filter(
-                p => stateOf(p) === "playing"
-            ).length;
+            active.filter(p => stateOf(p) === "playing").length;
 
         const watching =
-            active.filter(
-                p => stateOf(p) === "watching"
-            ).length;
+            active.filter(p => stateOf(p) === "watching").length;
 
         const waiting =
-            participants.filter(
-                isMainWaitingCandidate
-            ).length;
+            participants.filter(isMainWaitingCandidate).length;
 
         const exchange =
             participants.filter(
@@ -766,30 +912,23 @@
             `🟡 待機中 ${waiting}人　` +
             `🔄 交代待ち ${exchange}人`;
 
-        if (
-            dashboard.children[0].textContent !== title
-        ) {
+        if (dashboard.children[0].textContent !== title) {
             dashboard.children[0].textContent = title;
             dashboard.children[0].style.fontWeight = "bold";
             dashboard.children[0].style.marginBottom = "8px";
         }
 
-        if (
-            dashboard.children[1].textContent !== stats
-        ) {
+        if (dashboard.children[1].textContent !== stats) {
             dashboard.children[1].textContent = stats;
             dashboard.children[1].style.marginBottom = "8px";
         }
     }
 
-
     function observeDashboard() {
         const dashboard =
             document.getElementById("lobbyDashboard");
 
-        if (!dashboard || dashboardObserver) {
-            return;
-        }
+        if (!dashboard || dashboardObserver) return;
 
         dashboardObserver = new MutationObserver(updateDashboard);
 
@@ -807,20 +946,16 @@
 
 
     // ========================================
-    // 配信者名設定
+    // 配信者名の設定
     // ========================================
 
     function addHostNameControl() {
         const panel =
-            document.getElementById(
-                "mainLobbySettingsPanel"
-            );
+            document.getElementById("mainLobbySettingsPanel");
 
         if (
             !panel ||
-            document.getElementById(
-                "mainLobbyHostNameInput"
-            )
+            document.getElementById("mainLobbyHostNameInput")
         ) {
             return;
         }
@@ -869,13 +1004,9 @@
             .addEventListener("click", saveHostName);
     }
 
-
     async function loadHostName() {
         try {
-            const {
-                data,
-                error
-            } = await supabaseClient
+            const { data, error } = await supabaseClient
                 .from("app_settings")
                 .select("value")
                 .eq("key", HOST_NAME_KEY)
@@ -889,18 +1020,12 @@
                     : String(data.value).trim();
 
             const input =
-                document.getElementById(
-                    "mainLobbyHostNameInput"
-                );
+                document.getElementById("mainLobbyHostNameInput");
 
             const status =
-                document.getElementById(
-                    "mainLobbyHostNameStatus"
-                );
+                document.getElementById("mainLobbyHostNameStatus");
 
-            if (input) {
-                input.value = hostName;
-            }
+            if (input) input.value = hostName;
 
             if (status) {
                 status.textContent =
@@ -917,22 +1042,15 @@
         }
     }
 
-
     async function saveHostName() {
         const input =
-            document.getElementById(
-                "mainLobbyHostNameInput"
-            );
+            document.getElementById("mainLobbyHostNameInput");
 
         const status =
-            document.getElementById(
-                "mainLobbyHostNameStatus"
-            );
+            document.getElementById("mainLobbyHostNameStatus");
 
         const button =
-            document.getElementById(
-                "saveMainLobbyHostName"
-            );
+            document.getElementById("saveMainLobbyHostName");
 
         if (!input || !button) return;
 
@@ -942,9 +1060,7 @@
         const value = String(input.value || "").trim();
 
         try {
-            const {
-                error
-            } = await supabaseClient
+            const { error } = await supabaseClient
                 .from("app_settings")
                 .upsert(
                     {
@@ -952,9 +1068,7 @@
                         value,
                         updated_at: new Date().toISOString()
                     },
-                    {
-                        onConflict: "key"
-                    }
+                    { onConflict: "key" }
                 );
 
             if (error) throw error;
@@ -969,8 +1083,7 @@
             }
 
             repaint();
-
-            // 配信者名の設定だけでは自動補充しない。
+            await ensureBottomWatcher();
 
         } catch (error) {
             console.error(
@@ -990,15 +1103,12 @@
 
 
     // ========================================
-    // 定員設定変更
-    // 設定変更だけでは自動補充しない
+    // 定員変更
     // ========================================
 
     function bindCapacitySaveRefresh() {
         const button =
-            document.getElementById(
-                "saveMainLobbyCapacity"
-            );
+            document.getElementById("saveMainLobbyCapacity");
 
         if (
             !button ||
@@ -1016,6 +1126,7 @@
                 window.getRoomCapacity = () => capacity;
 
                 updateDashboard();
+                await ensureBottomWatcher();
             }, 800);
         });
     }
@@ -1023,60 +1134,57 @@
 
     // ========================================
     // 起動
-    // 起動時には自動補充しない
     // ========================================
 
     async function initialize() {
         await readCapacity(true);
 
         addHostNameControl();
-
         await loadHostName();
 
         bindRoundButton();
-
+        bindStartMatchWatcherCheck();
         bindCapacitySaveRefresh();
 
         observeDashboard();
-
         updateDashboard();
 
-        // 起動時は autoFillLobby() を呼ばない。
+        await ensureBottomWatcher();
     }
 
-
-    initialize().catch(
-        error =>
-            console.error(
-                "[Main Lobby] 初期化エラー:",
-                error
-            )
+    initialize().catch(error =>
+        console.error("[Main Lobby] 初期化エラー:", error)
     );
 
 
     // ========================================
     // 定期処理
-    // 人数表示などの更新だけ。自動補充はしない。
+    // 空き枠の自動補充はしない。
+    // 定員到達時の観戦枠と表示だけを整える。
     // ========================================
 
     setInterval(async () => {
-        if (roundBusy || suppressAuto) {
+        if (
+            roundBusy ||
+            suppressAuto ||
+            autoBusy ||
+            watcherEnforceBusy
+        ) {
             return;
         }
 
         await readCapacity();
 
         bindRoundButton();
-
+        bindStartMatchWatcherCheck();
+        bindCapacitySaveRefresh();
         addHostNameControl();
 
-        bindCapacitySaveRefresh();
-
         observeDashboard();
-
         updateDashboard();
 
-        // 重要：ここでは autoFillLobby() を呼ばない。
+        await ensureBottomWatcher();
+
     }, 2500);
 
 })();
