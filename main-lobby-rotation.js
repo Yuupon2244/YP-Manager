@@ -87,7 +87,6 @@
             }
         }
 
-        // メインロビーの定員だけを変更する。
         window.getRoomCapacity = () => capacity;
 
         return capacity;
@@ -138,7 +137,6 @@
 
     // ========================================
     // 順番比較
-    // script.js の待機一覧と同じ判定にする
     // ========================================
 
     function orderCompare(a, b) {
@@ -216,19 +214,22 @@
 
     // ========================================
     // メイン待機列
-    // room_id がある人は待機部屋所属のため除外
+    //
+    // 重要：
+    // 画面上の待機一覧に表示されている人を候補にする。
+    // room_id の有無だけを理由に候補から除外しない。
     //
     // 優先順位：
     // 1. 初回参加待ちの人
-    // 2. 画面上の待機一覧と同じ順番
+    // 2. display_order の昇順
+    // 3. joined_at の古い順
     // ========================================
 
     function isMainWaitingCandidate(person) {
         return (
             !isChatOnly(person) &&
             !isHost(person) &&
-            person.status === "waiting" &&
-            !person.room_id
+            person.status === "waiting"
         );
     }
 
@@ -301,9 +302,15 @@
     }
 
 
-    // 既存管理画面の表示・候補取得をメインロビー用にする。
+    // ========================================
+    // 既存管理画面との連携
+    // ========================================
+
     window.getRoomCapacity = () => capacity;
-    window.getCurrentLobbyMembers = () => activeMembers();
+
+    window.getCurrentLobbyMembers = () =>
+        activeMembers();
+
     window.getNextCandidates = (limit = 3) =>
         mainWaitingQueue().slice(0, limit);
 
@@ -335,7 +342,7 @@
 
             let active = activeMembers();
 
-            // 現在の定員を超えている場合は、勝手に退出させない。
+            // 定員を超えている場合は既存メンバーを勝手に退出させない。
             if (active.length > cap) {
                 console.warn(
                     `[Main Lobby] 定員超過中 ${active.length}/${cap}。既存メンバーは自動退出させません。`
@@ -380,8 +387,7 @@
                 guard++;
 
                 // 毎回、最新の待機列の先頭を選ぶ。
-                const queue = mainWaitingQueue();
-                const candidate = queue[0];
+                const candidate = mainWaitingQueue()[0];
 
                 if (!candidate) break;
 
@@ -400,6 +406,13 @@
                     // 参加中N-1人＋観戦1人で満員。
                     break;
                 }
+
+                console.log(
+                    "[Main Lobby] 待機列から補充:",
+                    candidate.name,
+                    "display_order:",
+                    candidate.display_order
+                );
 
                 await updateState(candidate, nextState);
             }
@@ -502,7 +515,6 @@
         let finishedTwo = 0;
 
         try {
-
             // --------------------------------
             // 1. 参加中の人だけ試合数を＋1
             // --------------------------------
@@ -529,8 +541,6 @@
                     }
 
                     if (nextCount >= 2) {
-
-                        // 2試合終了：現在の参加履歴を終了にする。
                         const {
                             data,
                             error
@@ -564,8 +574,6 @@
                             room_id: null
                         });
 
-                        // 既存の再参加待機処理を利用する。
-                        // 追加ごとに読み直し、順番番号の重複を防ぐ。
                         await loadParticipants();
 
                         const latest =
@@ -587,8 +595,6 @@
                         finishedTwo++;
 
                     } else {
-
-                        // 1試合目終了：参加中のまま試合数だけ更新。
                         const {
                             error
                         } = await supabaseClient
@@ -824,7 +830,6 @@
             dashboard.children[0].textContent !== title
         ) {
             dashboard.children[0].textContent = title;
-
             dashboard.children[0].style.fontWeight = "bold";
             dashboard.children[0].style.marginBottom = "8px";
         }
@@ -1109,7 +1114,7 @@
     );
 
 
-    // 2.5秒ごとに待機列を確認し、自動参加で空き枠を補充。
+    // 2.5秒ごとに待機列を確認し、空き枠を補充する。
     setInterval(async () => {
         if (roundBusy || suppressAuto) {
             return;
