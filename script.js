@@ -1648,12 +1648,15 @@ async function setLobbyState(
             return false;
         }
     }
-    const patch = {
-        status:
-            status,
-        lobby_state:
-            lobbyState
-    };
+const patch = {
+    status: status,
+    lobby_state: lobbyState
+};
+
+// 参加中になった時刻を記録
+if (lobbyState === "playing") {
+    patch.playing_started_at = new Date().toISOString();
+}
     if (
         lobbyState ===
             "waiting" ||
