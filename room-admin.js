@@ -880,6 +880,10 @@ async function logoutModerator() {
 
 async function loadParticipants() {
 
+    if (window.YPQueueRules) {
+        await window.YPQueueRules.refreshHostName(roomAdminSupabase);
+    }
+
     if (!currentRoom) {
 
         participants =
@@ -1017,48 +1021,18 @@ function createEmptyCard(
 function getWaitingPosition(
     target
 ) {
-
-    const waiting =
-        participants
-            .filter(
-                person =>
-                    person.status ===
-                    "waiting"
+    const waiting = window.YPQueueRules
+        ? window.YPQueueRules.sortMainWaiting(participants)
+        : participants
+            .filter(person =>
+                person.status === "waiting" &&
+                (person.room_id === null || person.room_id === undefined || person.room_id === "")
             )
-            .sort(
-                (
-                    a,
-                    b
-                ) =>
-                    Number(
-                        a.display_order
-                    ) -
-                    Number(
-                        b.display_order
-                    )
-            );
+            .sort((a, b) => Number(a.display_order) - Number(b.display_order));
 
-
-    const index =
-        waiting.findIndex(
-            person =>
-                person.id ===
-                target.id
-        );
-
-
-    if (
-        index ===
-        -1
-    ) {
-
-        return "-";
-    }
-
-
-    return index + 1;
+    const index = waiting.findIndex(person => person.id === target.id);
+    return index === -1 ? "-" : index + 1;
 }
-
 
 // ========================================
 // 全体描画
@@ -1094,14 +1068,12 @@ function render() {
         );
 
 
-    const waiting =
-        participants.filter(
+    const waiting = window.YPQueueRules
+        ? window.YPQueueRules.sortMainWaiting(participants)
+        : participants.filter(
             person =>
-                person.status ===
-                    "waiting" &&
-
-                person.room_id ===
-                    null
+                person.status === "waiting" &&
+                (person.room_id === null || person.room_id === undefined || person.room_id === "")
         );
 
 

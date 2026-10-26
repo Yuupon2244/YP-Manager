@@ -436,47 +436,41 @@ async function getMyWaitingEntry() {
 async function getCurrentPosition(
     entry
 ) {
-
     if (!currentSessionId || !entry) {
         return null;
     }
 
-    const {
-        data,
-        error
-    } = await supabaseClient
+    if (window.YPQueueRules) {
+        await window.YPQueueRules.refreshHostName(supabaseClient);
+        if (!window.YPQueueRules.isMainWaitingCandidate(entry)) {
+            return "-";
+        }
+    } else if (entry.room_id) {
+        return "-";
+    }
+
+    const { data, error } = await supabaseClient
         .from("participants")
-        .select("id, display_order")
+        .select("id, name, source, status, display_order, joined_at, first_participation_pending, note, room_id, chat_only, lobby_state")
         .eq("session_id", currentSessionId)
         .eq("status", "waiting")
-        .order(
-            "display_order",
-            {
-                ascending: true,
-                nullsFirst: false
-            }
-        )
-        .order(
-            "joined_at",
-            {
-                ascending: true
-            }
-        );
+        .is("room_id", null)
+        .order("display_order", { ascending: true, nullsFirst: false })
+        .order("joined_at", { ascending: true });
 
     if (error || !data) {
         return entry.display_order ?? "?";
     }
 
-    const index =
-        data.findIndex(
-            person => person.id === entry.id
-        );
+    const sorted = window.YPQueueRules
+        ? window.YPQueueRules.sortMainWaiting(data)
+        : data.filter(person => !isChatOnlyEntry(person));
 
+    const index = sorted.findIndex(person => person.id === entry.id);
     return index < 0
-        ? (entry.display_order ?? "?")
+        ? "-"
         : index + 1;
 }
-
 
 // ========================================
 // 状態判定

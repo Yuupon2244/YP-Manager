@@ -540,6 +540,9 @@ function enableAdminInput() {
 // 現在配信の参加者だけ読み込み
 // ========================================
 async function loadParticipants() {
+    if (window.YPQueueRules) {
+        await window.YPQueueRules.refreshHostName(supabaseClient);
+    }
     if (!currentSessionId) {
         participants = [];
         render();
@@ -2165,88 +2168,13 @@ function render() {
         "";
 
     const waiting =
-        participants
-            .filter(
+        window.YPQueueRules
+            ? window.YPQueueRules.sortMainWaiting(participants)
+            : participants.filter(
                 person =>
                     !isChatOnlyPerson(person) &&
-                    person.status ===
-                    "waiting"
-            )
-            .sort(
-                (
-                    a,
-                    b
-                ) => {
-                    const aNew =
-                        a.first_participation_pending
-                            ? 0
-                            : 1;
-
-                    const bNew =
-                        b.first_participation_pending
-                            ? 0
-                            : 1;
-
-                    if (
-                        aNew !==
-                        bNew
-                    ) {
-                        return (
-                            aNew -
-                            bNew
-                        );
-                    }
-
-                    const ao =
-                        Number(
-                            a.display_order
-                        );
-
-                    const bo =
-                        Number(
-                            b.display_order
-                        );
-
-                    if (
-                        Number.isFinite(
-                            ao
-                        ) &&
-                        Number.isFinite(
-                            bo
-                        )
-                    ) {
-                        return (
-                            ao -
-                            bo
-                        );
-                    }
-
-                    if (
-                        Number.isFinite(
-                            ao
-                        )
-                    ) {
-                        return -1;
-                    }
-
-                    if (
-                        Number.isFinite(
-                            bo
-                        )
-                    ) {
-                        return 1;
-                    }
-
-                    return String(
-                        a.joined_at ||
-                        ""
-                    ).localeCompare(
-                        String(
-                            b.joined_at ||
-                            ""
-                        )
-                    );
-                }
+                    person.status === "waiting" &&
+                    (person.room_id === null || person.room_id === undefined || person.room_id === "")
             );
 
     const playing =

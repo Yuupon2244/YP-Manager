@@ -262,28 +262,27 @@
     // ========================================
 
     function isMainWaitingCandidate(person) {
-        return (
-            !isChatOnly(person) &&
-            !isHost(person) &&
-            person.status === "waiting" &&
-            !person.room_id
-        );
+        return window.YPQueueRules
+            ? window.YPQueueRules.isMainWaitingCandidate(person, hostName)
+            : (
+                !isChatOnly(person) &&
+                !isHost(person) &&
+                person.status === "waiting" &&
+                !person.room_id
+            );
     }
 
     function mainWaitingQueue() {
-        return participants
-            .filter(isMainWaitingCandidate)
-            .sort((a, b) => {
-                const aNew =
-                    a.first_participation_pending ? 0 : 1;
-
-                const bNew =
-                    b.first_participation_pending ? 0 : 1;
-
-                if (aNew !== bNew) return aNew - bNew;
-
-                return orderCompare(a, b);
-            });
+        return window.YPQueueRules
+            ? window.YPQueueRules.sortMainWaiting(participants, hostName)
+            : participants
+                .filter(isMainWaitingCandidate)
+                .sort((a, b) => {
+                    const aNew = a.first_participation_pending ? 0 : 1;
+                    const bNew = b.first_participation_pending ? 0 : 1;
+                    if (aNew !== bNew) return aNew - bNew;
+                    return orderCompare(a, b);
+                });
     }
 
     function updateLocal(id, patch) {
@@ -1344,6 +1343,10 @@
                     ? ""
                     : String(data.value).trim();
 
+            if (window.YPQueueRules) {
+                window.YPQueueRules.setHostName(hostName);
+            }
+
             const input =
                 document.getElementById("mainLobbyHostNameInput");
 
@@ -1399,6 +1402,10 @@
             if (error) throw error;
 
             hostName = value;
+
+            if (window.YPQueueRules) {
+                window.YPQueueRules.setHostName(value);
+            }
 
             if (status) {
                 status.textContent =
