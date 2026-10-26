@@ -1200,9 +1200,9 @@ async function joinAsViewer() {
                     entry
                 );
 
-            if (
+                        if (
                 updated.status !== "viewer" ||
-                updated.lobby_state !== "chat_only"
+                !isChatOnlyEntry(updated)
             ) {
 
                 throw new Error(
