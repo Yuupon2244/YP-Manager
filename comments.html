@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>YP-Manager コメント閲覧専用</title>
+<style>
+:root {
+    color-scheme: dark;
+    --bg: #17191d;
+    --panel: #22252b;
+    --card: #2b2f37;
+    --line: #3a404a;
+    --text: #f4f6f8;
+    --muted: #abb3bf;
+    --blue: #7bd8ff;
+    --gold: #ffd66b;
+    --green: #83e1a0;
+    --red: #ff9292;
+}
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; }
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Noto Sans JP", Meiryo, sans-serif;
+}
+button, input { font: inherit; }
+button, a.button {
+    min-height: 42px;
+    padding: 9px 14px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: #343943;
+    color: var(--text);
+    font-weight: 700;
+    text-decoration: none;
+    cursor: pointer;
+}
+button:hover, a.button:hover { background: #414753; }
+button:disabled { opacity: .55; cursor: wait; }
+#app { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+header {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--line);
+    background: #202329;
+}
+.header-main { min-width: 0; }
+h1 { margin: 0; font-size: clamp(20px, 2.6vw, 30px); line-height: 1.25; }
+.subtitle { margin-top: 5px; color: var(--muted); font-size: 13px; }
+.header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+#status {
+    flex: 0 0 auto;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--line);
+    color: var(--muted);
+    font-size: 14px;
+}
+#status[data-kind="error"] { color: var(--red); }
+#status[data-kind="ok"] { color: var(--green); }
+#messages {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px clamp(10px, 2vw, 24px) 26px;
+    scroll-behavior: smooth;
+}
+.message {
+    margin: 0 auto 10px;
+    padding: 12px 15px;
+    max-width: 1300px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+}
+.message.owner { background: #443653; border-color: #7958a4; }
+.message.room-admin { background: #293d4a; border-color: #4b91ae; }
+.message.moderator { background: #303b31; border-color: #536c55; }
+.message.deleted { opacity: .7; border-style: dashed; }
+.message-meta { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.message-name { min-width: 0; color: var(--blue); font-size: 15px; font-weight: 800; overflow-wrap: anywhere; }
+.message.owner .message-name { color: var(--gold); }
+.message.room-admin .message-name { color: #8fe3ff; }
+.message.moderator .message-name { color: var(--green); }
+.message-time { flex: 0 0 auto; margin-left: auto; color: var(--muted); font-size: 12px; }
+.message-text { font-size: clamp(16px, 1.6vw, 20px); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.message-image { display: block; max-width: min(100%, 720px); max-height: 440px; margin-top: 10px; object-fit: contain; object-position: left top; border-radius: 8px; cursor: zoom-in; }
+.deleted-note { margin-top: 6px; color: var(--muted); font-size: 12px; }
+.empty { display: grid; place-items: center; min-height: 180px; color: var(--muted); font-size: 16px; }
+footer { flex: 0 0 auto; padding: 8px 18px; border-top: 1px solid var(--line); color: #838b97; font-size: 12px; text-align: center; }
+#loginOverlay {
+    position: fixed; inset: 0; z-index: 10; display: none; align-items: center; justify-content: center;
+    padding: 20px; background: rgba(13, 14, 17, .97);
+}
+.login-card { width: min(100%, 430px); padding: 26px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); }
+.login-card h2 { margin: 0 0 8px; font-size: 25px; }
+.login-card p { margin: 0 0 18px; color: var(--muted); line-height: 1.5; }
+.login-card label { display: block; margin: 12px 0 6px; font-size: 13px; color: var(--muted); }
+.login-card input { width: 100%; min-height: 46px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: #17191d; color: var(--text); }
+.login-card button { width: 100%; margin-top: 16px; background: #286b49; border-color: #39865f; }
+#loginMessage { min-height: 20px; margin-top: 12px; color: var(--red); font-size: 13px; }
+#imageOverlay { position: fixed; inset: 0; z-index: 20; display: none; align-items: center; justify-content: center; padding: 25px; background: rgba(0,0,0,.88); cursor: zoom-out; }
+#imageOverlay img { max-width: 100%; max-height: 100%; object-fit: contain; }
+@media (max-width: 650px) {
+    header { align-items: flex-start; flex-direction: column; padding: 12px; }
+    .header-actions { width: 100%; justify-content: flex-start; }
+    #status { padding: 9px 12px; }
+    #messages { padding: 10px 8px 18px; }
+    .message { padding: 10px 11px; margin-bottom: 8px; }
+    .message-meta { gap: 6px; }
+    .message-time { font-size: 11px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+    <header>
+        <div class="header-main">
+            <h1>💬 YP-Manager コメント閲覧専用</h1>
+            <div class="subtitle">管理画面とは別タブで、共有チャットを大きく表示します。送信・削除操作はありません。</div>
+        </div>
+        <div class="header-actions">
+            <button id="scrollButton" type="button">最新コメントへ</button>
+            <button id="refreshButton" type="button">今すぐ更新</button>
+            <a class="button" href="./index.html">YP管理画面へ</a>
+            <button id="logoutButton" type="button" hidden>ログアウト</button>
+        </div>
+    </header>
+    <div id="status" role="status" aria-live="polite">ログイン状態を確認中…</div>
+    <main id="messages" aria-live="polite" aria-label="共有コメント一覧">
+        <div class="empty">コメントを読み込んでいます…</div>
+    </main>
+    <footer>自動更新：3秒ごと · 読み取り専用</footer>
+</div>
+
+<div id="loginOverlay" role="dialog" aria-modal="true" aria-labelledby="loginTitle">
+    <form class="login-card" id="loginForm">
+        <h2 id="loginTitle">YP-Manager</h2>
+        <p>コメント閲覧ページを利用するには、Ownerアカウントでログインしてください。管理画面と同じログイン状態を利用します。</p>
+        <label for="emailInput">メールアドレス</label>
+        <input id="emailInput" type="email" autocomplete="username" required>
+        <label for="passwordInput">パスワード</label>
+        <input id="passwordInput" type="password" autocomplete="current-password" required>
+        <button id="loginButton" type="submit">ログイン</button>
+        <div id="loginMessage" role="status" aria-live="polite"></div>
+    </form>
+</div>
+<div id="imageOverlay" aria-label="画像を閉じる">
+    <img id="expandedImage" alt="拡大画像">
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+"use strict";
+
+const SUPABASE_URL = "https://ilmiebokwfccybrtduxy.supabase.co";
+const SUPABASE_KEY = "sb_publishable_tl-vkXmtiYn_f1VtPy689A_dwYg5";
+const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+const statusElement = document.getElementById("status");
+const messagesElement = document.getElementById("messages");
+const loginOverlay = document.getElementById("loginOverlay");
+const loginForm = document.getElementById("loginForm");
+const loginButton = document.getElementById("loginButton");
+const loginMessage = document.getElementById("loginMessage");
+const logoutButton = document.getElementById("logoutButton");
+const refreshButton = document.getElementById("refreshButton");
+const scrollButton = document.getElementById("scrollButton");
+const imageOverlay = document.getElementById("imageOverlay");
+const expandedImage = document.getElementById("expandedImage");
+
+let ownerProfile = null;
+let currentSessionId = null;
+let loading = false;
+let lastSignature = "";
+let firstRender = true;
+let authCheckInProgress = false;
+
+function setStatus(text, kind = "") {
+    statusElement.textContent = text;
+    statusElement.dataset.kind = kind;
+}
+
+function showLogin(message = "") {
+    loginOverlay.style.display = "flex";
+    loginMessage.textContent = message;
+    logoutButton.hidden = true;
+}
+
+function hideLogin() {
+    loginOverlay.style.display = "none";
+    loginMessage.textContent = "";
+}
+
+async function verifyOwner(user) {
+    if (!user?.id) return null;
+    const { data, error } = await client
+        .from("admin_users")
+        .select("user_id, role, display_name")
+        .eq("user_id", user.id)
+        .maybeSingle();
+    if (error) throw error;
+    return data?.role === "owner" ? data : null;
+}
+
+async function initializeAuth() {
+    if (authCheckInProgress) return;
+    authCheckInProgress = true;
+    try {
+        const { data, error } = await client.auth.getSession();
+        if (error) throw error;
+        const user = data.session?.user;
+        if (!user) {
+            ownerProfile = null;
+            showLogin();
+            setStatus("ログインしてください");
+            return;
+        }
+        const profile = await verifyOwner(user);
+        if (!profile) {
+            await client.auth.signOut({ scope: "local" });
+            ownerProfile = null;
+            showLogin("Owner権限のあるアカウントでログインしてください。");
+            setStatus("Owner権限を確認できませんでした", "error");
+            return;
+        }
+        ownerProfile = profile;
+        hideLogin();
+        logoutButton.hidden = false;
+        setStatus(`ログイン中：${profile.display_name || "Owner"} · 配信を確認中…`);
+        await refreshMessages(true);
+    } catch (error) {
+        console.error("認証確認エラー:", error);
+        showLogin("ログイン状態を確認できませんでした。もう一度ログインしてください。");
+        setStatus("認証エラー", "error");
+    } finally {
+        authCheckInProgress = false;
+    }
+}
+
+loginForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    loginButton.disabled = true;
+    loginButton.textContent = "ログイン中…";
+    loginMessage.textContent = "";
+    try {
+        const email = document.getElementById("emailInput").value.trim();
+        const password = document.getElementById("passwordInput").value;
+        const { data, error } = await client.auth.signInWithPassword({ email, password });
+        if (error) throw error;
+        const profile = await verifyOwner(data.user);
+        if (!profile) {
+            await client.auth.signOut({ scope: "local" });
+            throw new Error("Owner権限のあるアカウントでログインしてください。");
+        }
+        ownerProfile = profile;
+        hideLogin();
+        logoutButton.hidden = false;
+        setStatus(`ログイン中：${profile.display_name || "Owner"} · 配信を確認中…`);
+        await refreshMessages(true);
+    } catch (error) {
+        console.error("ログインエラー:", error);
+        loginMessage.textContent = error.message || "ログインできませんでした。";
+    } finally {
+        loginButton.disabled = false;
+        loginButton.textContent = "ログイン";
+    }
+});
+
+logoutButton.addEventListener("click", async () => {
+    await client.auth.signOut({ scope: "local" });
+    ownerProfile = null;
+    currentSessionId = null;
+    lastSignature = "";
+    messagesElement.replaceChildren(makeEmpty("ログアウトしました"));
+    showLogin();
+    setStatus("ログインしてください");
+});
+
+client.auth.onAuthStateChange((event) => {
+    if (event === "SIGNED_OUT") {
+        ownerProfile = null;
+        currentSessionId = null;
+        showLogin();
+        setStatus("ログインしてください");
+    }
+});
+
+function makeEmpty(text) {
+    const element = document.createElement("div");
+    element.className = "empty";
+    element.textContent = text;
+    return element;
+}
+
+function formatTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" });
+}
+
+function normalizeName(value) {
+    return String(value || "").trim();
+}
+
+async function getCurrentSessionId() {
+    const { data, error } = await client
+        .from("app_settings")
+        .select("value")
+        .eq("key", "current_session_id")
+        .maybeSingle();
+    if (error) throw error;
+    return data?.value ? String(data.value).trim() : null;
+}
+
+async function getRoomModerators(sessionId) {
+    const { data, error } = await client
+        .from("rooms")
+        .select("moderator_name, is_active")
+        .eq("session_id", sessionId)
+        .eq("is_active", true);
+    if (error) {
+        console.warn("部屋主情報を取得できませんでした:", error);
+        return new Set();
+    }
+    return new Set((data || []).map(row => normalizeName(row.moderator_name)).filter(Boolean));
+}
+
+function messageClass(item, roomModerators) {
+    if (item.is_deleted) return "message deleted";
+    if (item.sender_type === "owner") return "message owner";
+    if (item.sender_type === "moderator" && roomModerators.has(normalizeName(item.participant_name))) return "message room-admin";
+    if (item.sender_type === "moderator") return "message moderator";
+    return "message";
+}
+
+function messageSender(item, roomModerators) {
+    const name = normalizeName(item.participant_name);
+    if (item.sender_type === "owner") return `👑 ${name || "Owner"}（Owner）`;
+    if (item.sender_type === "moderator" && roomModerators.has(name)) return `🏠 ${name || "管理者"}（部屋主）`;
+    if (item.sender_type === "moderator") return `🛡 ${name || "Moderator"}（Moderator）`;
+    return name || "名前不明";
+}
+
+function renderMessages(messages, roomModerators) {
+    const signature = JSON.stringify(messages.map(item => [
+        item.message_id, item.sent_at, item.is_deleted, item.deleted_at,
+        item.message_text || "", item.image_url || "", item.image_path || ""
+    ]));
+    if (signature === lastSignature) return;
+
+    const wasNearBottom = messagesElement.scrollHeight - messagesElement.scrollTop - messagesElement.clientHeight < 100;
+    lastSignature = signature;
+    const fragment = document.createDocumentFragment();
+
+    if (!messages.length) {
+        fragment.appendChild(makeEmpty("まだメッセージはありません"));
+    } else {
+        for (const item of messages) {
+            const card = document.createElement("article");
+            card.className = messageClass(item, roomModerators);
+
+            const meta = document.createElement("div");
+            meta.className = "message-meta";
+            const name = document.createElement("div");
+            name.className = "message-name";
+            name.textContent = messageSender(item, roomModerators);
+            const time = document.createElement("time");
+            time.className = "message-time";
+            time.textContent = formatTime(item.sent_at);
+            meta.append(name, time);
+            card.appendChild(meta);
+
+            const text = document.createElement("div");
+            text.className = "message-text";
+            text.textContent = item.is_deleted
+                ? (item.message_text || "このメッセージは削除されました")
+                : (item.message_text || "");
+            if (text.textContent) card.appendChild(text);
+
+            if (item.is_deleted) {
+                const deleted = document.createElement("div");
+                deleted.className = "deleted-note";
+                deleted.textContent = `削除済み${item.deleted_by_name ? `（${item.deleted_by_name}）` : ""}`;
+                card.appendChild(deleted);
+            } else if (item.image_url) {
+                const image = document.createElement("img");
+                image.className = "message-image";
+                image.src = item.image_url;
+                image.alt = "コメント画像";
+                image.loading = "lazy";
+                image.decoding = "async";
+                image.addEventListener("click", () => {
+                    expandedImage.src = item.image_url;
+                    imageOverlay.style.display = "flex";
+                });
+                card.appendChild(image);
+            }
+            fragment.appendChild(card);
+        }
+    }
+
+    messagesElement.replaceChildren(fragment);
+    if (firstRender || wasNearBottom) messagesElement.scrollTop = messagesElement.scrollHeight;
+    firstRender = false;
+}
+
+async function refreshMessages(force = false) {
+    if (loading || !ownerProfile || document.hidden) return;
+    loading = true;
+    refreshButton.disabled = true;
+    try {
+        const sessionId = await getCurrentSessionId();
+        if (!sessionId) {
+            currentSessionId = null;
+            lastSignature = "";
+            messagesElement.replaceChildren(makeEmpty("現在受付中の配信はありません"));
+            setStatus("現在受付中の配信はありません");
+            return;
+        }
+        currentSessionId = sessionId;
+        const [messageResult, roomModerators] = await Promise.all([
+            client.rpc("get_participant_messages", { p_session_id: sessionId }),
+            getRoomModerators(sessionId)
+        ]);
+        if (messageResult.error) throw messageResult.error;
+        const messages = Array.isArray(messageResult.data) ? messageResult.data : [];
+        messages.sort((a, b) => new Date(a.sent_at || 0) - new Date(b.sent_at || 0));
+        renderMessages(messages, roomModerators);
+        const latest = messages.length ? formatTime(messages[messages.length - 1].sent_at) : "--:--";
+        setStatus(`配信ID：${sessionId}　｜　共有コメント ${messages.length}件　｜　最新 ${latest}`, "ok");
+    } catch (error) {
+        console.error("コメント取得エラー:", error);
+        setStatus(`コメントを取得できませんでした：${error.message || "詳細はコンソールを確認してください"}`, "error");
+        if (force) messagesElement.replaceChildren(makeEmpty("コメント取得に失敗しました。認証とデータベース権限を確認してください。"));
+    } finally {
+        loading = false;
+        refreshButton.disabled = false;
+    }
+}
+
+refreshButton.addEventListener("click", () => refreshMessages(true));
+scrollButton.addEventListener("click", () => {
+    messagesElement.scrollTo({ top: messagesElement.scrollHeight, behavior: "smooth" });
+});
+imageOverlay.addEventListener("click", () => {
+    imageOverlay.style.display = "none";
+    expandedImage.removeAttribute("src");
+});
+document.addEventListener("keydown", event => {
+    if (event.key === "Escape") imageOverlay.click();
+});
+
+document.addEventListener("visibilitychange", () => {
+    if (!document.hidden && ownerProfile) refreshMessages(true);
+});
+
+initializeAuth();
+setInterval(() => refreshMessages(false), 3000);
+</script>
+</body>
+</html>
