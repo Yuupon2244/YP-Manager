@@ -81,7 +81,6 @@ body {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-
 <script>
 "use strict";
 
@@ -104,9 +103,7 @@ const slotElements =
     Array.from(
         { length: 8 },
         (_, index) =>
-            document.getElementById(
-                `slot${index + 1}`
-            )
+            document.getElementById(`slot${index + 1}`)
     );
 
 let polling = false;
@@ -126,75 +123,198 @@ function clearNames() {
 
 /* =====================================
    チャット専用利用者を除外
-   YP-Manager既存ルールに合わせる
 ===================================== */
 
 function isChatOnlyPerson(person) {
+    const status = String(person?.status || "").toLowerCase();
+    const lobbyState = String(person?.lobby_state || "").toLowerCase();
+    const source = String(person?.source || "").toLowerCase();
+    const note = String(person?.note || "").toLowerCase();
+
     return (
         person?.chat_only === true ||
-        person?.status === "chat_only" ||
-        person?.lobby_state === "chat_only" ||
-        person?.source === "chat" ||
-        person?.note === "chat_only" ||
-        person?.note === "viewer"
+        person?.chat_only === "true" ||
+        status === "chat_only" ||
+        status === "viewer" ||
+        lobbyState === "chat_only" ||
+        source === "chat" ||
+        note === "chat_only" ||
+        note === "viewer"
     );
 }
 
 
 /* =====================================
-   配信画面に表示する名前を選ぶ（ハイブリッド方式）
-
-   URL・手動追加 → name
-   コメント参加者 → game_name があればゲーム名
-                     未登録ならYouTube表示名を仮表示
-
-   長い表示名は .slot-name のCSSで
-   表示枠の横幅に合わせて自動省略する。
-   コメントからスプラ名が登録されると、次の更新で
-   自動的にゲーム名へ切り替わる。
+   メイン待機列に載せる人か判定
+   参加中・観戦中・待機部屋所属者は除外
 ===================================== */
+
+function hasRoomAssignment(person) {
+    const roomId = person?.room_id;
+
+    return (
+        roomId !== null &&
+        roomId !== undefined &&
+        String(roomId).trim() !== ""
+    );
+}
+
+function isMainWaitingPerson(person) {
+    if (
+        !person ||
+        isChatOnlyPerson(person) ||
+        hasRoomAssignment(person)
+    ) {
+        return false;
+    }
+
+    const status =
+        String(person.status || "").toLowerCase().trim();
+
+    const lobbyState =
+        String(person.lobby_state || "").toLowerCase().trim();
+
+    const inactiveStatuses = new Set([
+        "playing",
+        "watching",
+        "viewer",
+        "chat_only",
+        "finished",
+        "cancelled",
+        "canceled",
+        "removed",
+        "left",
+        "exchange",
+        "in_game"
+    ]);
+
+    if (
+        inactiveStatuses.has(status) ||
+        inactiveStatuses.has(lobbyState)
+    ) {
+        return false;
+    }
+
+    // 通常の待機者は status=waiting。
+    // 旧データでは lobby_state=waiting も利用する。
+    return (
+        status === "waiting" ||
+        lobbyState === "waiting"
+    );
+}
+
+
+/* =====================================
+   表示名の決定（ハイブリッド方式）
+
+   スプラ名あり：
+       スプラ名を表示
+
+   URL参加・手動追加：
+       登録された名前を表示
+
+   コメント参加・スプラ名未登録：
+       YouTube表示名を「仮：名前」で表示
+
+   表示名自体が空：
+       利用可能なIDを仮表示
+
+   長い名前：
+       CSSの省略表示で枠内に収める
+===================================== */
+
+function firstNonEmpty(values) {
+    for (const value of values) {
+        if (value === null || value === undefined) {
+            continue;
+        }
+
+        const text = String(value).trim();
+
+        if (text) {
+            return text;
+        }
+    }
+
+    return "";
+}
 
 function getQueueDisplayName(person) {
     if (!person) {
         return "";
     }
 
-    const source =
-        String(person.source || "").toLowerCase();
+    const gameName = firstNonEmpty([
+        person.game_name,
+        person.splatoon_name,
+        person.ink_name
+    ]);
 
-    const name =
-        String(person.name || "").trim();
-
-    // URL参加・手動追加は入力された名前を表示する。
-    if (
-        source === "url" ||
-        source === "manual" ||
-        source === "admin" ||
-        source === ""
-    ) {
-        return name;
-    }
-
-    const gameName =
-        String(person.game_name || "").trim();
-
+    // スプラ名があれば最優先。
     if (gameName) {
         return gameName;
     }
 
-    // スプラ名が未登録ならYouTube名を仮表示する。
-    // 「仮：」が先頭に残るため、ゲーム名未確認と判別できる。
-    return name ? `仮：${name}` : "";
+    const source =
+        String(person.source || "").toLowerCase().trim();
+
+    // データベースに入っている候補名を順番に確認。
+    const originalName = firstNonEmpty([
+        person.name,
+        person.display_name,
+        person.youtube_name,
+        person.youtube_display_name,
+        person.user_display_name,
+        person.user_name,
+        person.username,
+        person.channel_name,
+        person.author_name,
+        person.nickname
+    ]);
+
+    // URL参加・手動追加は従来の名前をそのまま表示。
+    if (
+        ["url", "manual", "admin", ""].includes(source)
+    ) {
+        if (originalName) {
+            return originalName;
+        }
+    }
+
+    // コメント参加者は、スプラ名がなくても仮表示する。
+    if (originalName) {
+        return `仮：${originalName}`;
+    }
+
+    // 名前が空でも、IDがあれば完全な空欄にしない。
+    const fallbackId = firstNonEmpty([
+        person.user_id,
+        person.youtube_user_id,
+        person.author_id,
+        person.channel_id,
+        person.id
+    ]);
+
+    if (fallbackId) {
+        const compactId = fallbackId.length > 12
+            ? `${fallbackId.slice(0, 9)}…`
+            : fallbackId;
+
+        return `仮：${compactId}`;
+    }
+
+    return "仮：名前未登録";
 }
 
 
 /* =====================================
-   YP-Managerと同じ待機順で並べ替える
+   初参加優先・表示順で並べ替え
 ===================================== */
 
 function isFirstParticipationPending(person) {
     return (
         person.first_participation_pending === true ||
+        person.first_participation_pending === "true" ||
         (
             person.first_participation_pending == null &&
             person.note === "initial"
@@ -202,8 +322,24 @@ function isFirstParticipationPending(person) {
     );
 }
 
+function getValidDisplayOrder(person) {
+    const value = person?.display_order;
+
+    if (
+        value === null ||
+        value === undefined ||
+        value === ""
+    ) {
+        return null;
+    }
+
+    const number = Number(value);
+
+    return Number.isFinite(number) ? number : null;
+}
+
 function sortWaitingPeople(people) {
-    return people.sort((a, b) => {
+    return [...people].sort((a, b) => {
         const aNew =
             isFirstParticipationPending(a) ? 0 : 1;
 
@@ -214,21 +350,22 @@ function sortWaitingPeople(people) {
             return aNew - bNew;
         }
 
-        const ao = Number(a.display_order);
-        const bo = Number(b.display_order);
+        const ao = getValidDisplayOrder(a);
+        const bo = getValidDisplayOrder(b);
 
-        const aValid = Number.isFinite(ao);
-        const bValid = Number.isFinite(bo);
-
-        if (aValid && bValid && ao !== bo) {
+        if (
+            ao !== null &&
+            bo !== null &&
+            ao !== bo
+        ) {
             return ao - bo;
         }
 
-        if (aValid && !bValid) {
+        if (ao !== null && bo === null) {
             return -1;
         }
 
-        if (!aValid && bValid) {
+        if (ao === null && bo !== null) {
             return 1;
         }
 
@@ -279,9 +416,7 @@ async function getDisplayEnabled() {
         throw error;
     }
 
-    /*
-     * 設定がまだ存在しない場合はON。
-     */
+    // 設定がない場合は表示ON。
     if (!data) {
         return true;
     }
@@ -296,6 +431,12 @@ async function getDisplayEnabled() {
 
 /* =====================================
    待機リスト更新
+
+   session_id が一致する参加者を取得し、
+   画面側でメイン待機者を判定する。
+
+   status=waiting だけに絞って取得しないことで、
+   lobby_state=waiting の旧データも判定対象にする。
 ===================================== */
 
 async function refreshQueue() {
@@ -328,11 +469,8 @@ async function refreshQueue() {
         const { data, error } =
             await supabaseClient
                 .from("participants")
-                .select(
-                    "id, name, game_name, source, status, note, first_participation_pending, display_order, joined_at, session_id, chat_only, lobby_state"
-                )
-                .eq("session_id", sessionId)
-                .eq("status", "waiting");
+                .select("*")
+                .eq("session_id", sessionId);
 
         if (error) {
             throw error;
@@ -340,23 +478,24 @@ async function refreshQueue() {
 
         const waitingPeople =
             (data || []).filter(
-                person =>
-                    !isChatOnlyPerson(person)
+                isMainWaitingPerson
             );
 
         const sortedPeople =
             sortWaitingPeople(waitingPeople);
 
-        /*
-         * 先頭から8人を順番に表示。
-         * 名前が未登録なら該当枠は空欄。
-         */
-        for (let i = 0; i < 8; i++) {
+        // 先頭から8人を表示。
+        for (
+            let i = 0;
+            i < slotElements.length;
+            i++
+        ) {
             const person =
                 sortedPeople[i];
 
-            const displayName =
-                getQueueDisplayName(person);
+            const displayName = person
+                ? getQueueDisplayName(person)
+                : "";
 
             slotElements[i].textContent =
                 displayName;
@@ -365,9 +504,19 @@ async function refreshQueue() {
                 displayName;
         }
 
+        console.debug(
+            "[YP-Manager Queue]",
+            `取得=${(data || []).length}`,
+            `メイン待機=${waitingPeople.length}`,
+            `表示=${Math.min(
+                sortedPeople.length,
+                slotElements.length
+            )}`
+        );
+
     } catch (error) {
         console.error(
-            "[YP-Manager Queue]",
+            "[YP-Manager Queue] 待機リスト更新エラー:",
             error
         );
 
@@ -387,7 +536,6 @@ setInterval(
     refreshQueue,
     2500
 );
-
 </script>
 </body>
 </html>

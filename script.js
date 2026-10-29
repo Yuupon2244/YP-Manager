@@ -244,64 +244,42 @@ function showUrlJoinNotification(
 function detectNewUrlParticipants(
     nextParticipants
 ) {
-    // URL経由で登録された人は、参加状態にかかわらず追跡する。
-    // 待機中だけを記録すると、参加中から待機中へ戻ったときに
-    // 新規参加者と誤判定して通知音が鳴ってしまう。
+    // URL参加者を状態に関係なく記録する
     const allUrlParticipants =
         nextParticipants.filter(
             person =>
-                person.source === "url"
+                String(person.source || "").toLowerCase() === "url"
         );
 
-    // 実際に通知する対象は、チャットのみではないURL参加者が待機中のケース。
-    const waitingUrlParticipants =
-        allUrlParticipants.filter(
-            person =>
-                !isChatOnlyPerson(person) &&
-                person.status === "waiting"
-        );
+    const currentIds = new Set(
+        allUrlParticipants.map(
+            person => String(person.id)
+        )
+    );
 
-    // 「既に見た参加者」の記録は、waiting以外の状態も含めた全URL参加者で作る。
-    const currentIds =
-        new Set(
-            allUrlParticipants.map(
-                person => person.id
-            )
-        );
-
-    if (
-        !urlNotificationInitialized
-    ) {
-        // 初回読み込み時点で既に存在するURL参加者には通知しない。
-        knownUrlParticipantIds =
-            currentIds;
-        urlNotificationInitialized =
-            true;
+    if (!urlNotificationInitialized) {
+        knownUrlParticipantIds = currentIds;
+        urlNotificationInitialized = true;
         return;
     }
 
-    // この管理画面の読み込み後に新しく追加されたURL参加者だけ通知する。
     const newParticipants =
-        waitingUrlParticipants.filter(
-            person =>
-                !knownUrlParticipantIds.has(
-                    person.id
-                )
+        allUrlParticipants.filter(person =>
+            person.status === "waiting" &&
+            !isChatOnlyPerson(person) &&
+            String(person.note || "").toLowerCase() !== "rejoin" &&
+            !knownUrlParticipantIds.has(String(person.id))
         );
 
-    // 状態がplaying / watching / waitingの間で変わっても、IDの記録を失わない。
-    knownUrlParticipantIds =
-        currentIds;
+    // 待機中以外の参加者も記録に残しておく
+    knownUrlParticipantIds = currentIds;
 
-    newParticipants.forEach(
-        person => {
-            playUrlJoinSound();
-            showUrlJoinNotification(
-                person.name ||
-                "名前不明"
-            );
-        }
-    );
+    newParticipants.forEach(person => {
+        playUrlJoinSound();
+        showUrlJoinNotification(
+            person.name || "名前不明"
+        );
+    });
 }
 function resetUrlParticipantNotification() {
     urlNotificationInitialized =
