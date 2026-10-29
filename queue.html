@@ -81,7 +81,6 @@ body {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="queue-rules.js?v=20261026-1"></script>
 
 <script>
 "use strict";
@@ -143,14 +142,16 @@ function isChatOnlyPerson(person) {
 
 
 /* =====================================
-   配信画面に表示する名前を選ぶ
+   配信画面に表示する名前を選ぶ（ハイブリッド方式）
 
-   URL登録   → name
-   手動追加  → name
-   コメント  → game_name
+   URL・手動追加 → name
+   コメント参加者 → game_name があればゲーム名
+                     未登録ならYouTube表示名を仮表示
 
-   コメント参加者のゲーム名が未登録なら
-   YouTubeの表示名は代用しない
+   長い表示名は .slot-name のCSSで
+   表示枠の横幅に合わせて自動省略する。
+   コメントからスプラ名が登録されると、次の更新で
+   自動的にゲーム名へ切り替わる。
 ===================================== */
 
 function getQueueDisplayName(person) {
@@ -161,19 +162,29 @@ function getQueueDisplayName(person) {
     const source =
         String(person.source || "").toLowerCase();
 
+    const name =
+        String(person.name || "").trim();
+
+    // URL参加・手動追加は入力された名前を表示する。
     if (
         source === "url" ||
         source === "manual" ||
+        source === "admin" ||
         source === ""
     ) {
-        return String(
-            person.name || ""
-        ).trim();
+        return name;
     }
 
-    return String(
-        person.game_name || ""
-    ).trim();
+    const gameName =
+        String(person.game_name || "").trim();
+
+    if (gameName) {
+        return gameName;
+    }
+
+    // スプラ名が未登録ならYouTube名を仮表示する。
+    // 「仮：」が先頭に残るため、ゲーム名未確認と判別できる。
+    return name ? `仮：${name}` : "";
 }
 
 
@@ -318,26 +329,23 @@ async function refreshQueue() {
             await supabaseClient
                 .from("participants")
                 .select(
-                    "id, name, game_name, source, status, note, first_participation_pending, display_order, joined_at, session_id, chat_only, lobby_state, room_id"
+                    "id, name, game_name, source, status, note, first_participation_pending, display_order, joined_at, session_id, chat_only, lobby_state"
                 )
                 .eq("session_id", sessionId)
-                .eq("status", "waiting")
-                .is("room_id", null);
+                .eq("status", "waiting");
 
         if (error) {
             throw error;
         }
 
-        if (window.YPQueueRules) {
-            await window.YPQueueRules.refreshHostName(supabaseClient);
-        }
+        const waitingPeople =
+            (data || []).filter(
+                person =>
+                    !isChatOnlyPerson(person)
+            );
 
         const sortedPeople =
-            window.YPQueueRules
-                ? window.YPQueueRules.sortMainWaiting(data || [])
-                : sortWaitingPeople(
-                    (data || []).filter(person => !isChatOnlyPerson(person))
-                );
+            sortWaitingPeople(waitingPeople);
 
         /*
          * 先頭から8人を順番に表示。

@@ -244,41 +244,55 @@ function showUrlJoinNotification(
 function detectNewUrlParticipants(
     nextParticipants
 ) {
-    const currentUrlParticipants =
+    // URL経由で登録された人は、参加状態にかかわらず追跡する。
+    // 待機中だけを記録すると、参加中から待機中へ戻ったときに
+    // 新規参加者と誤判定して通知音が鳴ってしまう。
+    const allUrlParticipants =
         nextParticipants.filter(
             person =>
-                !isChatOnlyPerson(person) &&
-                person.source ===
-                    "url" &&
-                person.status ===
-                    "waiting"
+                person.source === "url"
         );
+
+    // 実際に通知する対象は、チャットのみではないURL参加者が待機中のケース。
+    const waitingUrlParticipants =
+        allUrlParticipants.filter(
+            person =>
+                !isChatOnlyPerson(person) &&
+                person.status === "waiting"
+        );
+
+    // 「既に見た参加者」の記録は、waiting以外の状態も含めた全URL参加者で作る。
     const currentIds =
         new Set(
-            currentUrlParticipants.map(
-                person =>
-                    person.id
+            allUrlParticipants.map(
+                person => person.id
             )
         );
+
     if (
         !urlNotificationInitialized
     ) {
+        // 初回読み込み時点で既に存在するURL参加者には通知しない。
         knownUrlParticipantIds =
             currentIds;
         urlNotificationInitialized =
             true;
         return;
     }
+
+    // この管理画面の読み込み後に新しく追加されたURL参加者だけ通知する。
     const newParticipants =
-        currentUrlParticipants.filter(
+        waitingUrlParticipants.filter(
             person =>
-                !knownUrlParticipantIds
-                    .has(
-                        person.id
-                    )
+                !knownUrlParticipantIds.has(
+                    person.id
+                )
         );
+
+    // 状態がplaying / watching / waitingの間で変わっても、IDの記録を失わない。
     knownUrlParticipantIds =
         currentIds;
+
     newParticipants.forEach(
         person => {
             playUrlJoinSound();
