@@ -88,7 +88,7 @@ const SUPABASE_URL =
     "https://ilmiebokwfccybrtduxy.supabase.co";
 
 const SUPABASE_KEY =
-    "sb_publishable_tl-vkXmtiYn_f1VtPy689A_dwKCdYg5";
+    "sb_publishable_tl-vkXmtiYn_f1VtPy689A_dwYg5";
 
 const supabaseClient =
     window.supabase.createClient(
@@ -145,8 +145,12 @@ function isChatOnlyPerson(person) {
 
 
 /* =====================================
-   メイン待機列に載せる人か判定
-   参加中・観戦中・待機部屋所属者は除外
+   待機列に載せる人かを判定
+
+   ・チャット専用利用者は除外
+   ・待機部屋所属者は除外
+   ・status=waiting の人は待機列に含める
+   ・status が未設定の旧データは lobby_state で判定
 ===================================== */
 
 function hasRoomAssignment(person) {
@@ -174,53 +178,36 @@ function isMainWaitingPerson(person) {
     const lobbyState =
         String(person.lobby_state || "").toLowerCase().trim();
 
-    const inactiveStatuses = new Set([
-        "playing",
-        "watching",
-        "viewer",
-        "chat_only",
-        "finished",
-        "cancelled",
-        "canceled",
-        "removed",
-        "left",
-        "exchange",
-        "in_game"
-    ]);
-
-    if (
-        inactiveStatuses.has(status) ||
-        inactiveStatuses.has(lobbyState)
-    ) {
-        return false;
+    /*
+     * status を最優先する。
+     * 試合後の再参加レコードは、
+     * status="waiting" / lobby_state="exchange"
+     * になる場合がある。
+     *
+     * lobby_state="exchange" だけを理由に
+     * 待機列から除外しない。
+     */
+    if (status) {
+        return status === "waiting";
     }
 
-    // 通常の待機者は status=waiting。
-    // 旧データでは lobby_state=waiting も利用する。
-    return (
-        status === "waiting" ||
-        lobbyState === "waiting"
-    );
+    // status が未設定の旧データのみ補助判定する。
+    return lobbyState === "waiting";
 }
 
 
 /* =====================================
    表示名の決定（ハイブリッド方式）
 
-   スプラ名あり：
-       スプラ名を表示
-
    URL参加・手動追加：
-       登録された名前を表示
+       登録した name を優先
 
-   コメント参加・スプラ名未登録：
-       YouTube表示名を「仮：名前」で表示
-
-   表示名自体が空：
-       利用可能なIDを仮表示
+   コメント参加：
+       game_name があればスプラ名
+       なければ YouTube名などを仮表示
 
    長い名前：
-       CSSの省略表示で枠内に収める
+       CSSで表示枠に合わせて省略
 ===================================== */
 
 function firstNonEmpty(values) {
@@ -244,61 +231,81 @@ function getQueueDisplayName(person) {
         return "";
     }
 
-    const gameName = firstNonEmpty([
-        person.game_name,
-        person.splatoon_name,
-        person.ink_name
-    ]);
-
-    // スプラ名があれば最優先。
-    if (gameName) {
-        return gameName;
-    }
-
     const source =
         String(person.source || "").toLowerCase().trim();
 
-    // データベースに入っている候補名を順番に確認。
-    const originalName = firstNonEmpty([
-        person.name,
-        person.display_name,
-        person.youtube_name,
-        person.youtube_display_name,
-        person.user_display_name,
-        person.user_name,
-        person.username,
-        person.channel_name,
-        person.author_name,
-        person.nickname
-    ]);
+    const registeredName =
+        firstNonEmpty([
+            person.name
+        ]);
 
-    // URL参加・手動追加は従来の名前をそのまま表示。
+    const gameName =
+        firstNonEmpty([
+            person.game_name,
+            person.splatoon_name,
+            person.ink_name
+        ]);
+
+    /*
+     * URL参加者は name 列に登録名が保存される。
+     * game_name が入っていても、URL参加者は name を優先する。
+     */
     if (
         ["url", "manual", "admin", ""].includes(source)
     ) {
-        if (originalName) {
-            return originalName;
+        if (registeredName) {
+            return registeredName;
+        }
+
+        if (gameName) {
+            return gameName;
+        }
+    } else {
+        // コメント参加者は登録済みのスプラ名を優先。
+        if (gameName) {
+            return gameName;
         }
     }
 
-    // コメント参加者は、スプラ名がなくても仮表示する。
-    if (originalName) {
-        return `仮：${originalName}`;
+    const fallbackName =
+        firstNonEmpty([
+            person.display_name,
+            person.youtube_name,
+            person.youtube_display_name,
+            person.user_display_name,
+            person.user_name,
+            person.username,
+            person.channel_name,
+            person.author_name,
+            person.nickname,
+            person.name
+        ]);
+
+    // スプラ名が未登録のコメント参加者は仮表示。
+    if (fallbackName) {
+        return (
+            source === "url" ||
+            source === "manual" ||
+            source === "admin"
+        )
+            ? fallbackName
+            : `仮：${fallbackName}`;
     }
 
-    // 名前が空でも、IDがあれば完全な空欄にしない。
-    const fallbackId = firstNonEmpty([
-        person.user_id,
-        person.youtube_user_id,
-        person.author_id,
-        person.channel_id,
-        person.id
-    ]);
+    const fallbackId =
+        firstNonEmpty([
+            person.user_id,
+            person.youtube_user_id,
+            person.author_id,
+            person.channel_id,
+            person.id
+        ]);
 
     if (fallbackId) {
-        const compactId = fallbackId.length > 12
-            ? `${fallbackId.slice(0, 9)}…`
-            : fallbackId;
+        const compactId =
+            fallbackId.length > 12
+                ? `${fallbackId.slice(0, 9)}…`
+                : fallbackId;
 
         return `仮：${compactId}`;
     }
@@ -335,7 +342,9 @@ function getValidDisplayOrder(person) {
 
     const number = Number(value);
 
-    return Number.isFinite(number) ? number : null;
+    return Number.isFinite(number)
+        ? number
+        : null;
 }
 
 function sortWaitingPeople(people) {
@@ -416,7 +425,6 @@ async function getDisplayEnabled() {
         throw error;
     }
 
-    // 設定がない場合は表示ON。
     if (!data) {
         return true;
     }
@@ -431,12 +439,6 @@ async function getDisplayEnabled() {
 
 /* =====================================
    待機リスト更新
-
-   session_id が一致する参加者を取得し、
-   画面側でメイン待機者を判定する。
-
-   status=waiting だけに絞って取得しないことで、
-   lobby_state=waiting の旧データも判定対象にする。
 ===================================== */
 
 async function refreshQueue() {
@@ -484,7 +486,6 @@ async function refreshQueue() {
         const sortedPeople =
             sortWaitingPeople(waitingPeople);
 
-        // 先頭から8人を表示。
         for (
             let i = 0;
             i < slotElements.length;
@@ -493,9 +494,10 @@ async function refreshQueue() {
             const person =
                 sortedPeople[i];
 
-            const displayName = person
-                ? getQueueDisplayName(person)
-                : "";
+            const displayName =
+                person
+                    ? getQueueDisplayName(person)
+                    : "";
 
             slotElements[i].textContent =
                 displayName;
