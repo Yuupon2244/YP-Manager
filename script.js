@@ -1766,6 +1766,10 @@ async function finishMatch(
     person
 ) {
 
+    if (person && getLobbyState(person) === "watching") {
+        alert("観戦中の人は試合終了できません。先に参加へ戻してください。");
+        return;
+    }
 
     if (
         !person ||
@@ -2036,7 +2040,6 @@ async function setPlaying(
     person
 ) {
 
-
     if (
         !person
     ) {
@@ -2050,14 +2053,12 @@ async function setPlaying(
         person
     );
 
-
 }
 
 
 async function returnToWaiting(
     person
 ) {
-
 
     if (
         !person
@@ -2318,16 +2319,17 @@ function render() {
                     person
                 );
 
-            if (
-                getLobbyState(person) === "watching"
-            ) {
-                // 観戦中は試合に参加していないため、試合数操作を出さない。
+            const isWatching =
+                getLobbyState(person) === "watching";
+
+            // 観戦中は試合に参加していないため、
+            // 試合終了・2試合終了の操作を表示しない。
+            if (isWatching) {
                 buttonsBox.appendChild(
                     createButton(
                         "▶ 参加へ",
                         "call",
-                        () =>
-                            setPlaying(person)
+                        () => setPlaying(person)
                     )
                 );
             } else {
@@ -2335,8 +2337,7 @@ function render() {
                     createButton(
                         "⏹ 試合終了",
                         "finish",
-                        () =>
-                            finishMatch(person)
+                        () => finishMatch(person)
                     )
                 );
 
@@ -2344,8 +2345,7 @@ function render() {
                     createButton(
                         "🔁 2試合終了",
                         "finish",
-                        () =>
-                            finishTwoGames(person)
+                        () => finishTwoGames(person)
                     )
                 );
 
@@ -2353,8 +2353,7 @@ function render() {
                     createButton(
                         "👀 観戦へ",
                         "move",
-                        () =>
-                            setWatching(person)
+                        () => setWatching(person)
                     )
                 );
             }
@@ -2363,17 +2362,11 @@ function render() {
                 createButton(
                     "削除",
                     "delete",
-                    () =>
-                        deletePerson(
-                            person.id,
-                            person.name
-                        )
+                    () => deletePerson(person.id, person.name)
                 )
             );
 
-            playingList.appendChild(
-                personBox
-            );
+            playingList.appendChild(personBox);
         }
     );
 
@@ -2547,7 +2540,6 @@ function render() {
         );
     }
 
-    // 自動ローテーション中は、参加者の状態を変更する操作を無効化する。
     const rotationBusy =
         typeof window.ypIsMainLobbyRotationBusy === "function" &&
         window.ypIsMainLobbyRotationBusy();
@@ -2716,6 +2708,11 @@ if (
 async function finishTwoGames(
     person
 ) {
+    if (person && getLobbyState(person) === "watching") {
+        alert("観戦中の人は試合終了できません。先に参加へ戻してください。");
+        return;
+    }
+
     if (
         !person ||
         !currentSessionId
