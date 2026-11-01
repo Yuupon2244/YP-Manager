@@ -1,8 +1,9 @@
 /* =====================================
-   YP-Manager 共通のメイン待機列ルール
+   YP-Manager 共通のメイン待機列ルール v1.3.2
    - 待機部屋所属者をメイン待機列から除外
    - チャット専用・配信者アカウントを除外
    - 初参加優先 → display_order → joined_at → id の順に並べる
+   - 観戦者とチャット専用利用者を明確に区別
 ===================================== */
 (function () {
     "use strict";
@@ -35,6 +36,7 @@
     function setHostName(value) {
         hostName = String(value == null ? "" : value).trim();
         hostCacheAt = Date.now();
+
         try {
             localStorage.setItem(HOST_CACHE_KEY, hostName);
             localStorage.setItem(HOST_CACHE_AT_KEY, String(hostCacheAt));
@@ -48,7 +50,11 @@
             return hostName;
         }
 
-        if (!force && hostCacheAt && Date.now() - hostCacheAt < HOST_CACHE_TTL_MS) {
+        if (
+            !force &&
+            hostCacheAt &&
+            Date.now() - hostCacheAt < HOST_CACHE_TTL_MS
+        ) {
             return hostName;
         }
 
@@ -65,44 +71,114 @@
                     .maybeSingle();
 
                 if (error) throw error;
-                setHostName(data && data.value != null ? data.value : "");
+
+                setHostName(
+                    data && data.value != null
+                        ? data.value
+                        : ""
+                );
+
             } catch (error) {
-                // 設定取得に失敗しても、キャッシュ済みの名前で表示を続ける。
-                console.warn("[YP-Manager] 配信者名の共通設定取得に失敗:", error);
+                console.warn(
+                    "[YP-Manager] 配信者名の共通設定取得に失敗:",
+                    error
+                );
+
             } finally {
                 hostRefreshPromise = null;
             }
+
             return hostName;
         })();
 
         return hostRefreshPromise;
     }
 
+    // =====================================
+    // チャット専用判定
+    // =====================================
+
     function isChatOnlyPerson(person) {
-        return Boolean(
-            person && (
-                person.chat_only === true ||
-                person.status === "chat_only" ||
-                person.lobby_state === "chat_only" ||
-                person.source === "chat" ||
-                person.note === "chat_only" ||
-                person.note === "viewer"
-            )
-        );
+
+        if (!person) {
+            return false;
+        }
+
+        const status = String(
+            person.status || ""
+        ).trim().toLowerCase();
+
+        const lobbyState = String(
+            person.lobby_state || ""
+        ).trim().toLowerCase();
+
+        const source = String(
+            person.source || ""
+        ).trim().toLowerCase();
+
+        const note = String(
+            person.note || ""
+        ).trim().toLowerCase();
+
+        // 正式なチャット専用状態
+        if (
+            person.chat_only === true ||
+            status === "chat_only" ||
+            lobbyState === "chat_only" ||
+            source === "chat" ||
+            note === "chat_only"
+        ) {
+            return true;
+        }
+
+        // 古いデータとの互換性
+        // viewer + note=viewer で保存された旧チャット専用を判定。
+        // ただし、watching が明示された観戦者は除外しない。
+        if (
+            status === "viewer" &&
+            note === "viewer" &&
+            lobbyState !== "watching"
+        ) {
+            return true;
+        }
+
+        return false;
     }
 
+    // =====================================
+    // 配信者判定
+    // =====================================
+
     function isHost(person, explicitHostName) {
-        const comparisonName = explicitHostName == null ? hostName : String(explicitHostName);
-        const normalizedHost = normalizeName(comparisonName);
+
+        const comparisonName =
+            explicitHostName == null
+                ? hostName
+                : String(explicitHostName);
+
+        const normalizedHost =
+            normalizeName(comparisonName);
+
         return Boolean(
             normalizedHost &&
             normalizeName(person && person.name) === normalizedHost
         );
     }
 
+    // =====================================
+    // メイン待機列参加候補判定
+    // =====================================
+
     function isMainWaitingCandidate(person, explicitHostName) {
-        const roomId = person && person.room_id;
-        const hasRoom = roomId !== null && roomId !== undefined && String(roomId).trim() !== "";
+
+        const roomId =
+            person && person.room_id;
+
+        const hasRoom =
+            roomId !== null &&
+            roomId !== undefined &&
+            String(roomId).trim() !== "";
+
         return Boolean(
             person &&
             person.status === "waiting" &&
@@ -112,46 +188,108 @@
         );
     }
 
+    // =====================================
+    // 初参加判定
+    // =====================================
+
     function isFirstParticipationPending(person) {
+
         return Boolean(
             person && (
                 person.first_participation_pending === true ||
-                (person.first_participation_pending == null && person.note === "initial")
+                (
+                    person.first_participation_pending == null &&
+                    person.note === "initial"
+                )
             )
         );
     }
 
-    function orderCompare(a, b) {
-        const aValue = a && a.display_order;
-        const bValue = b && b.display_order;
-        const aHasOrder = aValue !== null && aValue !== undefined &&
-            String(aValue).trim() !== "" && Number.isFinite(Number(aValue));
-        const bHasOrder = bValue !== null && bValue !== undefined &&
-            String(bValue).trim() !== "" && Number.isFinite(Number(bValue));
+    // =====================================
+    // 順番比較
+    // =====================================
 
-        if (aHasOrder && bHasOrder && Number(aValue) !== Number(bValue)) {
+    function orderCompare(a, b) {
+
+        const aValue =
+            a && a.display_order;
+
+        const bValue =
+            b && b.display_order;
+
+        const aHasOrder =
+            aValue !== null &&
+            aValue !== undefined &&
+            String(aValue).trim() !== "" &&
+            Number.isFinite(Number(aValue));
+
+        const bHasOrder =
+            bValue !== null &&
+            bValue !== undefined &&
+            String(bValue).trim() !== "" &&
+            Number.isFinite(Number(bValue));
+
+        if (
+            aHasOrder &&
+            bHasOrder &&
+            Number(aValue) !== Number(bValue)
+        ) {
             return Number(aValue) - Number(bValue);
         }
+
         if (aHasOrder && !bHasOrder) return -1;
         if (!aHasOrder && bHasOrder) return 1;
 
-        const joinedCompare = String((a && a.joined_at) || "").localeCompare(
-            String((b && b.joined_at) || "")
+        const joinedCompare =
+            String((a && a.joined_at) || "").localeCompare(
+                String((b && b.joined_at) || "")
+            );
+
+        if (joinedCompare !== 0) {
+            return joinedCompare;
+        }
+
+        return String((a && a.id) || "").localeCompare(
+            String((b && b.id) || "")
         );
-        if (joinedCompare !== 0) return joinedCompare;
-        return String((a && a.id) || "").localeCompare(String((b && b.id) || ""));
     }
 
+    // =====================================
+    // メイン待機列の並び替え
+    // =====================================
+
     function sortMainWaiting(people, explicitHostName) {
+
         return (Array.isArray(people) ? people : [])
-            .filter(person => isMainWaitingCandidate(person, explicitHostName))
+            .filter(person =>
+                isMainWaitingCandidate(
+                    person,
+                    explicitHostName
+                )
+            )
             .sort((a, b) => {
-                const aNew = isFirstParticipationPending(a) ? 0 : 1;
-                const bNew = isFirstParticipationPending(b) ? 0 : 1;
-                if (aNew !== bNew) return aNew - bNew;
+
+                const aNew =
+                    isFirstParticipationPending(a)
+                        ? 0
+                        : 1;
+
+                const bNew =
+                    isFirstParticipationPending(b)
+                        ? 0
+                        : 1;
+
+                if (aNew !== bNew) {
+                    return aNew - bNew;
+                }
+
                 return orderCompare(a, b);
             });
     }
+
+    // =====================================
+    // 共通機能公開
+    // =====================================
 
     window.YPQueueRules = {
         getHostName: () => hostName,
@@ -164,4 +302,5 @@
         orderCompare,
         sortMainWaiting
     };
+
 })();
