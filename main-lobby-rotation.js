@@ -1418,43 +1418,32 @@
         updateDashboard();
     }
 
-    function updateDashboard() {
-        const dashboard =
-            document.getElementById("lobbyDashboard");
+function updateDashboard() {
+    const dashboard = document.getElementById("lobbyDashboard");
+    if (!dashboard || dashboard.children.length < 2) return;
 
-        if (!dashboard || dashboard.children.length < 2) return;
+    const active = activeMembers();
+    const playing = active.filter(person => stateOf(person) === "playing").length;
+    const watching = active.filter(person => stateOf(person) === "watching").length;
+    const waiting = participants.filter(isMainWaitingCandidate).length;
+    const priority = active.filter(person => person.watcher_bonus === true).length;
 
-        const active = activeMembers();
+    const title = `🎮 メインロビー ${active.length} / ${capacity}人`;
+    const stats = `🟢 参加中 ${playing}人　👀 観戦 ${watching}人　⭐ 次部屋優先 ${priority}人　🟡 待機 ${waiting}人`;
 
-        const playing = active.filter(person =>
-            stateOf(person) === "playing"
-        ).length;
-
-        const watching = active.filter(person =>
-            stateOf(person) === "watching"
-        ).length;
-
-        const waiting = participants.filter(
-            isMainWaitingCandidate
-        ).length;
-
-        const priority = active.filter(person =>
-            person.watcher_bonus === true
-        ).length;
-
-        const title =
-            `🎮 メインロビー ${active.length} / ${capacity}人`;
-
-        const stats =
-            `🟢 参加中 ${playing}人　👀 観戦 ${watching}人　⭐ 次部屋優先 ${priority}人　🟡 待機 ${waiting}人`;
-
+    // 表示内容が変わったときだけ書き換える。
+    // MutationObserverによる無限ループを防ぐ。
+    if (dashboard.children[0].textContent !== title) {
         dashboard.children[0].textContent = title;
         dashboard.children[0].style.fontWeight = "bold";
         dashboard.children[0].style.marginBottom = "8px";
+    }
 
+    if (dashboard.children[1].textContent !== stats) {
         dashboard.children[1].textContent = stats;
         dashboard.children[1].style.marginBottom = "8px";
     }
+}    
 
     function observeDashboard() {
         const dashboard =
