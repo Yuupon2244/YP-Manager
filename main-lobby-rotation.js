@@ -1,104 +1,312 @@
 // ========================================
-// YP-Manager メインロビー自動補充・試合ローテーション
+// YP-Manager メインロビー試合管理・ローテーション v2
+// 既存の participants / app_settings のみを使用
 // ========================================
-// script.js / rooms.js / main-lobby-settings.js の後に読み込む。
-// 古い auto-lobby.js は併用しない。
+// 読み込み順：script.js / chat-users.js / rooms.js /
+// main-lobby-settings.js の後
 //
-// 通常：2試合で交代
-// 観戦経験あり：3試合で交代
-//
-// 「今の試合終了＋1」:
-// 1. 今回の待機列を保存
-// 2. 参加中の人の試合数を＋1
-// 3. 規定試合数に達した人を再参加待機の最後尾へ
-// 4. 前回観戦していた人を参加状態に戻す
-// 5. その上にいた人を観戦状態にする
-// 6. 今回の操作前から待機していた人だけを補充する
-// 7. 補充人数は今回終了した人の人数まで
-// 8. 前回観戦していた人を参加中一覧の一番上にする
+// ルール：
+// ・通常参加者は実プレイ2試合で交代
+// ・実際に1試合観戦した人は watcher_bonus=true / 3試合対象
+// ・試合開始時に参加者を固定し、その人だけ試合終了時に加算
+// ・観戦者は各試合終了時に参加へ戻し、下から次の人を観戦へ
+// ・観戦優遇対象者はアクティブ一覧の上位に置き、3/3まで優先
+// ・試合開始時点で待機していた人だけを、空いた枠へ補充
+// ・試合スナップショットは app_settings に保存し、再読み込み後も復元
 
 (function () {
     "use strict";
 
-    if (window.__ypMainLobbyRotationStarted) return;
-    window.__ypMainLobbyRotationStarted = true;
+    if (window.__ypMainLobbyRotationV2Started) return;
+    window.__ypMainLobbyRotationV2Started = true;
 
     const CAPACITY_KEY = "main_lobby_capacity";
     const HOST_NAME_KEY = "main_lobby_host_name";
+    const MATCH_STATE_KEY = "main_lobby_match_state_v2";
 
     let capacity = 9;
     let capacityLoaded = false;
     let capacityReadAt = 0;
     let hostName = "";
-
-    let autoBusy = false;
-    let roundBusy = false;
-    let suppressAuto = false;
-    let watcherEnforceBusy = false;
-    let watcherMutationBusy = false;
-
-    // 定期的な観戦枠チェックだけでは画面操作を止めない。
-    // 実際のローテーション、または観戦状態を書き換える間だけ操作を止める。
-    window.ypIsMainLobbyRotationBusy = () =>
-        roundBusy || suppressAuto || autoBusy || watcherMutationBusy;
-
+    let matchState = null;
+    let startBusy = false;
+    let finishBusy = false;
     let roundButton = null;
+    let startButton = null;
+    let matchStatus = null;
     let dashboardObserver = null;
 
+    // 通常の定期確認ではカード操作を止めない。
+    window.ypIsMainLobbyRotationBusy = () => startBusy || finishBusy;
 
     // ========================================
-    // 試合数の目標
+    // 基本判定
+    // ========================================
+
+    function normalizeName(value) {
+        return String(value || "")
+            .normalize("NFKC")
+            .trim()
+            .replace(/^@+/, "")
+            .replace(/[\s\u3000]+/g, "")
+            .toLocaleLowerCase("ja-JP");
+    }
+
+    function isHost(person) {
+        return Boolean(
+            hostName &&
+            normalizeName(person && person.name) === normalizeName(hostName)
+        );
+    }
+
+    function isChatOnly(person) {
+        if (typeof isChatOnlyPerson === "function") {
+            return isChatOnlyPerson(person);
+        }
+        return Boolean(
+            person && (
+                person.chat_only === true ||
+                person.status === "chat_only" ||
+                person.lobby_state === "chat_only" ||
+                person.source === "chat"
+            )
+        );
+    }
+
+    function stateOf(person) {
+        if (typeof getLobbyState === "function") {
+            return getLobbyState(person);
+        }
+        if (person && person.lobby_state) return person.lobby_state;
+        return person && person.status || "waiting";
+    }
+
+    function orderCompare(a, b) {
+        const av = a && a.display_order;
+        const bv = b && b.display_order;
+        const aHas = av !== null && av !== undefined &&
+            String(av).trim() !== "" &&
+            Number.isFinite(Number(av));
+        const bHas = bv !== null && bv !== undefined &&
+            String(bv).trim() !== "" &&
+            Number.isFinite(Number(bv));
+
+        if (aHas && bHas && Number(av) !== Number(bv)) {
+            return Number(av) - Number(bv);
+        }
+        if (aHas && !bHas) return -1;
+        if (!aHas && bHas) return 1;
+
+        const joined = String(a && a.joined_at || "")
+            .localeCompare(String(b && b.joined_at || ""));
+
+        if (joined) return joined;
+
+        return String(a && a.id || "")
+            .localeCompare(String(b && b.id || ""));
+    }
+
+    function activeMembers() {
+        return participants.filter(person =>
+            !isChatOnly(person) &&
+            !isHost(person) &&
+            (person.status === "playing" || person.status === "viewer") &&
+            (stateOf(person) === "playing" || stateOf(person) === "watching")
+        );
+    }
+
+    function playingMembers() {
+        return activeMembers()
+            .filter(person => stateOf(person) === "playing")
+            .sort(orderCompare);
+    }
+
+    function watchingMembers() {
+        return activeMembers()
+            .filter(person => stateOf(person) === "watching")
+            .sort(orderCompare);
+    }
+
+    function isMainWaitingCandidate(person) {
+        if (window.YPQueueRules) {
+            return window.YPQueueRules.isMainWaitingCandidate(person, hostName);
+        }
+        return Boolean(
+            person &&
+            person.status === "waiting" &&
+            !person.room_id &&
+            !isChatOnly(person) &&
+            !isHost(person)
+        );
+    }
+
+    function mainWaitingQueue() {
+        if (window.YPQueueRules) {
+            return window.YPQueueRules.sortMainWaiting(participants, hostName);
+        }
+        return participants.filter(isMainWaitingCandidate).sort(orderCompare);
+    }
+
+    // script.js / main-lobby-settings.js との後方互換
+    window.getCurrentLobbyMembers = () => activeMembers();
+    window.getNextCandidates = (limit = 3) => mainWaitingQueue().slice(0, limit);
+
+    function updateLocal(id, patch) {
+        participants = participants.map(person =>
+            person.id === id ? { ...person, ...patch } : person
+        );
+    }
+
+    // ========================================
+    // 試合数ルール・表示
     // ========================================
 
     function getMatchTarget(person) {
-        return person?.watcher_bonus === true ? 3 : 2;
+        return person && person.watcher_bonus === true ? 3 : 2;
+    }
+
+    function getMatchCount(person) {
+        const count = Number(person && person.match_count);
+        if (!Number.isFinite(count)) return 0;
+        return Math.max(0, Math.min(getMatchTarget(person), count));
     }
 
     window.getMatchTarget = getMatchTarget;
+    window.getMatchCount = getMatchCount;
 
-    window.getMatchCount = function (person) {
-        const count = Number(person?.match_count);
+    function getNextCycleGameNumber() {
+        if (!matchState || matchState.status !== "completed") return 1;
+        return Number(matchState.cycle_game_number) === 1 ? 2 : 1;
+    }
 
-        if (!Number.isFinite(count)) return 0;
+    if (
+        typeof window.updateMatchDisplay === "function" &&
+        !window.updateMatchDisplay.__ypRotationV2
+    ) {
+        const oldUpdateMatchDisplay = window.updateMatchDisplay;
 
-        return Math.max(
-            0,
-            Math.min(getMatchTarget(person), count)
-        );
-    };
+        const wrappedUpdateMatchDisplay = function (personBox, person) {
+            oldUpdateMatchDisplay(personBox, person);
 
-
-    // ========================================
-    // 試合数表示を2試合／3試合に切り替える
-    // ========================================
-
-    const originalUpdateMatchDisplay = window.updateMatchDisplay;
-
-    if (typeof originalUpdateMatchDisplay === "function") {
-        window.updateMatchDisplay = function (personBox, person) {
-            originalUpdateMatchDisplay(personBox, person);
-
-            const boxes = Array.from(
+            const countBox = Array.from(
                 personBox.querySelectorAll(".date")
-            );
-
-            const countBox = boxes.find(
-                element =>
-                    String(element.textContent || "")
-                        .startsWith("試合数：")
+            ).find(element =>
+                String(element.textContent || "").startsWith("試合数：")
             );
 
             if (countBox) {
+                const count = getMatchCount(person);
+                const target = getMatchTarget(person);
+
                 countBox.textContent =
-                    `試合数：${window.getMatchCount(person)} / ${getMatchTarget(person)}`;
+                    person && person.watcher_bonus === true
+                        ? `試合数：${count} / ${target}　★ 次部屋優先`
+                        : `試合数：${count} / ${target}`;
+
+                countBox.style.fontWeight =
+                    count >= target ? "bold" : "normal";
+
+                countBox.style.color =
+                    count >= target ? "#c92a2a" : "";
             }
         };
+
+        wrappedUpdateMatchDisplay.__ypRotationV2 = true;
+        window.updateMatchDisplay = wrappedUpdateMatchDisplay;
     }
 
+    // 個別カウント・個別終了は全体スナップショットと競合するため無効化。
+    window.adjustMatchCount = async function () {
+        alert("試合数は『試合開始・参加者を確定』と『試合終了・カウント更新』で一括管理します。");
+    };
+
+    window.finishMatch = async function () {
+        alert("個別の試合終了は使用せず、画面上部の『試合終了・カウント更新』を使ってください。");
+    };
+
+    window.finishTwoGames = async function () {
+        alert("個別の2試合終了は廃止しました。全体の試合終了ボタンを使ってください。");
+    };
+
+    function removeLegacyControls() {
+        const oldAllFinish =
+            document.getElementById("finishAllPlayingButton");
+
+        if (oldAllFinish) oldAllFinish.remove();
+
+        const removeLabels = new Set([
+            "− 試合数",
+            "+ 試合数",
+            "＋ 試合数",
+            "⏹ 試合終了",
+            "🔁 2試合終了"
+        ]);
+
+        document.querySelectorAll(
+            "#waitingList .buttons button, #playingList .buttons button, #cancelledList .buttons button"
+        ).forEach(button => {
+            if (removeLabels.has(String(button.textContent || "").trim())) {
+                button.remove();
+            }
+        });
+
+        // 試合開始後は参加者の編成を固定する。
+        // 辞退・削除・ゲーム名変更は残し、参加／観戦の切替だけを止める。
+        const rosterLocked = Boolean(matchState && (
+            matchState.status === "running" ||
+            matchState.status === "processing"
+        ));
+
+        const rosterActions = new Set([
+            "▶ 参加開始",
+            "▶ 参加へ",
+            "👀 観戦へ",
+            "🔄 交代待ち"
+        ]);
+
+        document.querySelectorAll(
+            "#waitingList .buttons button, #playingList .buttons button"
+        ).forEach(button => {
+            if (rosterActions.has(String(button.textContent || "").trim())) {
+                button.disabled = rosterLocked;
+                button.title = rosterLocked
+                    ? "試合中は今回の参加者を固定しています。試合終了後に変更できます。"
+                    : "";
+            }
+        });
+    }
+
+    if (
+        typeof window.render === "function" &&
+        !window.render.__ypRotationV2Wrapped
+    ) {
+        const oldRender = window.render;
+
+        const wrappedRender = function (...args) {
+            const result = oldRender.apply(this, args);
+            removeLegacyControls();
+            updateMatchControls();
+            return result;
+        };
+
+        wrappedRender.__ypRotationV2Wrapped = true;
+        window.render = wrappedRender;
+    }
 
     // ========================================
-    // 定員取得
+    // 設定読み込み
     // ========================================
+
+    async function readSetting(key) {
+        const { data, error } = await supabaseClient
+            .from("app_settings")
+            .select("value")
+            .eq("key", key)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data ? data.value : null;
+    }
 
     async function readCapacity(force = false) {
         if (
@@ -110,29 +318,19 @@
         }
 
         try {
-            const { data, error } = await supabaseClient
-                .from("app_settings")
-                .select("value")
-                .eq("key", CAPACITY_KEY)
-                .maybeSingle();
-
-            if (error) throw error;
-
-            const n = Number(data?.value);
+            const value = await readSetting(CAPACITY_KEY);
+            const number = Number(value);
 
             capacity =
-                Number.isInteger(n) && n >= 2 && n <= 50
-                    ? n
+                Number.isInteger(number) && number >= 2 && number <= 50
+                    ? number
                     : 9;
 
             capacityLoaded = true;
             capacityReadAt = Date.now();
 
         } catch (error) {
-            console.error(
-                "[Main Lobby] 定員読込エラー:",
-                error
-            );
+            console.error("[Main Lobby] 定員取得エラー:", error);
 
             if (!capacityLoaded) {
                 const fallback = Number(
@@ -152,1185 +350,36 @@
         }
 
         window.getRoomCapacity = () => capacity;
-
         return capacity;
     }
 
-
-    // ========================================
-    // 配信者名・参加者判定
-    // ========================================
-
-    function normalizeName(value) {
-        return String(value || "")
-            .normalize("NFKC")
-            .trim()
-            .replace(/^@+/, "")
-            .replace(/[\s\u3000]+/g, "")
-            .toLocaleLowerCase("ja-JP");
-    }
-
-    function isHost(person) {
-        return Boolean(
-            hostName &&
-            normalizeName(person?.name) === normalizeName(hostName)
-        );
-    }
-
-    function isChatOnly(person) {
-        return typeof isChatOnlyPerson === "function"
-            ? isChatOnlyPerson(person)
-            : (
-                person?.source === "chat" ||
-                person?.chat_only === true
-            );
-    }
-
-    function stateOf(person) {
-        return typeof getLobbyState === "function"
-            ? getLobbyState(person)
-            : person?.lobby_state || person?.status || "waiting";
-    }
-
-
-    // ========================================
-    // 順番比較
-    // ========================================
-
-    function orderCompare(a, b) {
-        const aValue = a?.display_order;
-        const bValue = b?.display_order;
-
-        const aHasOrder =
-            aValue !== null &&
-            aValue !== undefined &&
-            String(aValue).trim() !== "" &&
-            Number.isFinite(Number(aValue));
-
-        const bHasOrder =
-            bValue !== null &&
-            bValue !== undefined &&
-            String(bValue).trim() !== "" &&
-            Number.isFinite(Number(bValue));
-
-        const x = Number(aValue);
-        const y = Number(bValue);
-
-        if (aHasOrder && bHasOrder && x !== y) return x - y;
-        if (aHasOrder && !bHasOrder) return -1;
-        if (!aHasOrder && bHasOrder) return 1;
-
-        const joinedCompare =
-            String(a?.joined_at || "").localeCompare(
-                String(b?.joined_at || "")
-            );
-
-        if (joinedCompare !== 0) return joinedCompare;
-
-        return String(a?.id || "").localeCompare(String(b?.id || ""));
-    }
-
-
-    // ========================================
-    // メインロビーの参加者
-    // ========================================
-
-    function activeMembers() {
-        return participants.filter(person =>
-            !isChatOnly(person) &&
-            !isHost(person) &&
-            (
-                person.status === "playing" ||
-                person.status === "viewer"
-            ) &&
-            (
-                stateOf(person) === "playing" ||
-                stateOf(person) === "watching"
-            )
-        );
-    }
-
-    function playingMembers() {
-        return activeMembers()
-            .filter(person => stateOf(person) === "playing")
-            .sort(orderCompare);
-    }
-
-    function watchingMembers() {
-        return activeMembers()
-            .filter(person => stateOf(person) === "watching")
-            .sort(orderCompare);
-    }
-
-
-    // ========================================
-    // メイン待機列
-    // ========================================
-
-    function isMainWaitingCandidate(person) {
-        return window.YPQueueRules
-            ? window.YPQueueRules.isMainWaitingCandidate(person, hostName)
-            : (
-                !isChatOnly(person) &&
-                !isHost(person) &&
-                person.status === "waiting" &&
-                !person.room_id
-            );
-    }
-
-    function mainWaitingQueue() {
-        return window.YPQueueRules
-            ? window.YPQueueRules.sortMainWaiting(participants, hostName)
-            : participants
-                .filter(isMainWaitingCandidate)
-                .sort((a, b) => {
-                    const aNew = a.first_participation_pending ? 0 : 1;
-                    const bNew = b.first_participation_pending ? 0 : 1;
-                    if (aNew !== bNew) return aNew - bNew;
-                    return orderCompare(a, b);
-                });
-    }
-
-    function updateLocal(id, patch) {
-        participants = participants.map(person =>
-            person.id === id
-                ? { ...person, ...patch }
-                : person
-        );
-    }
-
-
-    // ========================================
-    // 観戦ボーナスを記録
-    // ========================================
-
-    async function markWatcherBonusById(id) {
-        if (!id || !currentSessionId) return;
-
-        const person = participants.find(item => item.id === id);
-
-        if (person?.watcher_bonus === true) return;
-
-        const { data, error } = await supabaseClient
-            .from("participants")
-            .update({ watcher_bonus: true })
-            .eq("id", id)
-            .eq("session_id", currentSessionId)
-            .select("id");
-
-        if (error) throw error;
-
-        if (!data?.length) {
-            throw new Error(`観戦ボーナスを保存できませんでした: ${id}`);
-        }
-
-        updateLocal(id, { watcher_bonus: true });
-    }
-
-    async function markExistingWatchersAsBonus() {
-        for (const watcher of watchingMembers()) {
-            if (watcher.watcher_bonus !== true) {
-                await markWatcherBonusById(watcher.id);
-            }
-        }
-    }
-
-
-    // ========================================
-    // 既存の観戦操作を観戦ボーナスに連動
-    // ========================================
-
-    const originalSetLobbyState = window.setLobbyState;
-
-    if (typeof originalSetLobbyState === "function") {
-        window.setLobbyState = async function (id, lobbyState, status) {
-            const result = await originalSetLobbyState.apply(
-                this,
-                arguments
-            );
-
-            if (result && lobbyState === "watching") {
-                try {
-                    await markWatcherBonusById(id);
-                } catch (error) {
-                    console.error(
-                        "[Main Lobby] 観戦ボーナス保存エラー:",
-                        error
-                    );
-                }
-            }
-
-            return result;
-        };
-    }
-
-    const originalUpdateStatus = window.updateStatus;
-
-    if (typeof originalUpdateStatus === "function") {
-        window.updateStatus = async function (id, newStatus) {
-            const result = await originalUpdateStatus.apply(
-                this,
-                arguments
-            );
-
-            if (newStatus === "viewer") {
-                try {
-                    await markWatcherBonusById(id);
-                    await loadParticipants();
-                } catch (error) {
-                    console.error(
-                        "[Main Lobby] 観戦ボーナス保存エラー:",
-                        error
-                    );
-                }
-            }
-
-            return result;
-        };
-    }
-
-
-    // ========================================
-    // ロビー状態変更
-    // ========================================
-
-    async function updateState(person, nextState) {
-        if (!person || !currentSessionId) {
-            throw new Error("参加者または配信IDがありません。");
-        }
-
-        const patch = {
-            status: "playing",
-            lobby_state: nextState,
-            first_participation_pending: false,
-            room_id: null
-        };
-
-        if (nextState === "playing") {
-            patch.playing_started_at = new Date().toISOString();
-        }
-
-        if (nextState === "watching") {
-            patch.watcher_bonus = true;
-        }
-
-        const { data, error } = await supabaseClient
-            .from("participants")
-            .update(patch)
-            .eq("id", person.id)
-            .eq("session_id", currentSessionId)
-            .select("id");
-
-        if (error) throw error;
-
-        if (!data?.length) {
-            throw new Error(
-                `${person.name || person.id} の状態更新に失敗しました。`
-            );
-        }
-
-        updateLocal(person.id, patch);
-    }
-
-
-    // ========================================
-    // 目標試合数に達した人を再参加待機へ
-    // ========================================
-
-    async function finishPersonAtTarget(person, target) {
-        const { data, error } = await supabaseClient
-            .from("participants")
-            .update({
-                status: "finished",
-                lobby_state: "exchange",
-                match_count: target,
-                first_participation_pending: false,
-                room_id: null
-            })
-            .eq("id", person.id)
-            .eq("session_id", currentSessionId)
-            .eq("status", "playing")
-            .select("id");
-
-        if (error) throw error;
-
-        if (!data?.length) {
-            throw new Error(
-                `${person.name}さんの試合終了を記録できませんでした。`
-            );
-        }
-
-        updateLocal(person.id, {
-            status: "finished",
-            lobby_state: "exchange",
-            match_count: target,
-            first_participation_pending: false,
-            room_id: null
-        });
-
-        await loadParticipants();
-
-        const latest =
-            participants.find(p => p.id === person.id) || person;
-
-        const created = await createRejoinEntry(latest);
-
-        if (!created) {
-            throw new Error(
-                `${person.name}さんを再参加待機へ追加できませんでした。`
-            );
-        }
-
-        await loadParticipants();
-
-        return true;
-    }
-
-
-    // ========================================
-    // 個人の試合終了ボタン
-    // 通常2試合、観戦経験あり3試合
-    // ========================================
-
-    window.finishMatch = async function (person) {
-        if (!person || !currentSessionId) return;
-
+    async function loadHostName() {
         try {
-            const target = getMatchTarget(person);
-            const currentCount = window.getMatchCount(person);
-            const nextCount = Math.min(target, currentCount + 1);
+            const value = await readSetting(HOST_NAME_KEY);
+            hostName = value == null ? "" : String(value).trim();
 
-            if (nextCount >= target) {
-                await finishPersonAtTarget(
-                    { ...person, match_count: target },
-                    target
-                );
-
-                alert(
-                    `${person.name}さんは${target}/${target}試合終了です。再参加待機へ移動しました。`
-                );
-            } else {
-                const { error } = await supabaseClient
-                    .from("participants")
-                    .update({
-                        match_count: nextCount,
-                        first_participation_pending: false,
-                        lobby_state: "playing",
-                        status: "playing"
-                    })
-                    .eq("id", person.id)
-                    .eq("session_id", currentSessionId)
-                    .eq("status", "playing");
-
-                if (error) throw error;
-
-                updateLocal(person.id, {
-                    match_count: nextCount,
-                    first_participation_pending: false,
-                    lobby_state: "playing",
-                    status: "playing"
-                });
-
-                alert(
-                    `${person.name}さんの試合を1試合終了として記録しました。現在 ${nextCount}/${target} 試合です。`
-                );
+            if (window.YPQueueRules) {
+                window.YPQueueRules.setHostName(hostName);
             }
 
-            await loadParticipants();
+            const input =
+                document.getElementById("mainLobbyHostNameInput");
+
+            const status =
+                document.getElementById("mainLobbyHostNameStatus");
+
+            if (input) input.value = hostName;
+
+            if (status) {
+                status.textContent = hostName
+                    ? `配信者名「${hostName}」を定員計算から除外します。`
+                    : "空欄なら名前による除外は行いません。";
+            }
 
         } catch (error) {
-            console.error("[Main Lobby] 個別試合終了エラー:", error);
-            alert("試合終了を記録できませんでした。");
-        }
-    };
-
-
-    // ========================================
-    // 試合数の手動調整
-    // ========================================
-
-    window.adjustMatchCount = async function (person, delta) {
-        if (!person || !currentSessionId) return;
-
-        try {
-            const target = getMatchTarget(person);
-            const currentCount = window.getMatchCount(person);
-
-            const nextCount = Math.max(
-                0,
-                Math.min(target, currentCount + Number(delta))
-            );
-
-            if (nextCount === currentCount) return;
-
-            if (nextCount >= target) {
-                await finishPersonAtTarget(
-                    { ...person, match_count: target },
-                    target
-                );
-
-                alert(
-                    `${person.name}さんは${target}/${target}試合終了です。再参加待機へ移動しました。`
-                );
-
-                return;
-            }
-
-            const { error } = await supabaseClient
-                .from("participants")
-                .update({
-                    match_count: nextCount,
-                    first_participation_pending: false,
-                    lobby_state: stateOf(person)
-                })
-                .eq("id", person.id)
-                .eq("session_id", currentSessionId);
-
-            if (error) throw error;
-
-            updateLocal(person.id, {
-                match_count: nextCount,
-                first_participation_pending: false
-            });
-
-            await loadParticipants();
-
-        } catch (error) {
-            console.error("[Main Lobby] 試合数修正エラー:", error);
-            alert("試合数を修正できませんでした。");
-        }
-    };
-
-
-    // ========================================
-    // 既存画面との連携
-    // ========================================
-
-    window.getRoomCapacity = () => capacity;
-    window.getCurrentLobbyMembers = () => activeMembers();
-
-    window.getNextCandidates = (limit = 3) =>
-        mainWaitingQueue().slice(0, limit);
-
-
-    // ========================================
-    // 観戦者を一番下にする
-    // 前回の並び順を利用しつつ表示順を並べ替える
-    // ========================================
-
-    async function reorderActiveDisplayOrder(topPriorityIds = []) {
-        const active = activeMembers();
-
-        if (!active.length) return;
-
-        const prioritySet = new Set(topPriorityIds);
-
-        const priorityMembers = topPriorityIds
-            .map(id => active.find(p => p.id === id))
-            .filter(p => p && stateOf(p) === "playing");
-
-        const otherPlaying = active
-            .filter(p =>
-                stateOf(p) === "playing" &&
-                !prioritySet.has(p.id)
-            )
-            .sort(orderCompare);
-
-        const watchers = active
-            .filter(p => stateOf(p) === "watching")
-            .sort(orderCompare);
-
-        const ordered = [
-            ...priorityMembers,
-            ...otherPlaying,
-            ...watchers
-        ];
-
-        // 既存の active の display_order 値を入れ替え、
-        // 新しい値との衝突をできるだけ避ける。
-        const orders = [...new Set(
-            active
-                .map(p => p.display_order)
-                .filter(value =>
-                    value !== null &&
-                    value !== undefined &&
-                    String(value).trim() !== "" &&
-                    Number.isFinite(Number(value))
-                )
-                .map(Number)
-        )].sort((a, b) => a - b);
-
-        // 重複した display_order はまとめ、
-        // active の各参加者に一意の順番を割り当てる。
-        let nextOrder = orders.length
-            ? orders[orders.length - 1] + 1
-            : 1;
-
-        while (orders.length < ordered.length) {
-            orders.push(nextOrder++);
-        }
-
-        for (let i = 0; i < ordered.length; i++) {
-            const person = ordered[i];
-            const nextOrder = orders[i];
-
-            if (Number(person.display_order) === nextOrder) {
-                continue;
-            }
-
-            const { error } = await supabaseClient
-                .from("participants")
-                .update({ display_order: nextOrder })
-                .eq("id", person.id)
-                .eq("session_id", currentSessionId);
-
-            if (error) throw error;
-
-            updateLocal(person.id, {
-                display_order: nextOrder
-            });
+            console.error("[Main Lobby] 配信者名取得エラー:", error);
         }
     }
-
-
-    // ========================================
-    // 満員時の観戦枠調整
-    // 待機列の自動補充はしない
-    // ========================================
-
-    async function ensureBottomWatcher() {
-        if (
-            watcherEnforceBusy ||
-            autoBusy ||
-            roundBusy ||
-            suppressAuto ||
-            !currentSessionId
-        ) {
-            return;
-        }
-
-        // 定期チェックの多重起動だけを防ぐ。
-        // このフラグ自体では画面上のボタンを無効にしない。
-        watcherEnforceBusy = true;
-
-        try {
-            const cap = await readCapacity();
-
-            let active = activeMembers();
-            let watchers = watchingMembers();
-
-            const hasUnmarkedWatcher =
-                watchers.some(watcher => watcher.watcher_bonus !== true);
-
-            const needsWatcherNormalization =
-                watchers.length > 1;
-
-            const needsBottomWatcher =
-                active.length >= cap &&
-                active.length > 0 &&
-                watchers.length === 0;
-
-            // 問題がなければDB更新・一覧再読込・再描画を行わない。
-            // 以前は2.5秒ごとに同じ並び替えと再読込を繰り返していた。
-            if (
-                !hasUnmarkedWatcher &&
-                !needsWatcherNormalization &&
-                !needsBottomWatcher
-            ) {
-                return;
-            }
-
-            // 実際に状態を変更する間だけ参加者ボタンをロックする。
-            watcherMutationBusy = true;
-
-            if (hasUnmarkedWatcher) {
-                await markExistingWatchersAsBonus();
-            }
-
-            // 観戦者は最大1人。複数いる場合は最後尾の1人を残す。
-            if (needsWatcherNormalization) {
-                const keepId = watchers[watchers.length - 1].id;
-
-                for (const watcher of watchers) {
-                    if (watcher.id !== keepId) {
-                        await updateState(watcher, "playing");
-                    }
-                }
-            }
-
-            active = activeMembers();
-            watchers = watchingMembers();
-
-            // 定員に達していて観戦者がいない場合だけ、最後尾を観戦にする。
-            if (
-                active.length >= cap &&
-                active.length > 0 &&
-                watchers.length === 0
-            ) {
-                const bottom = playingMembers().at(-1);
-
-                if (bottom) {
-                    await updateState(bottom, "watching");
-                }
-            }
-
-            // 実際に補正が必要だった場合だけ順番を整えて画面を更新する。
-            await reorderActiveDisplayOrder();
-            await loadParticipants();
-            repaint();
-
-        } catch (error) {
-            console.error(
-                "[Main Lobby] 観戦枠調整エラー:",
-                error
-            );
-
-        } finally {
-            watcherMutationBusy = false;
-            watcherEnforceBusy = false;
-        }
-    }
-
-
-    // ========================================
-    // 手動参加開始後にも観戦枠を確認
-    // ========================================
-
-    function bindStartMatchWatcherCheck() {
-        const originalStartMatch = window.startMatch;
-
-        if (
-            typeof originalStartMatch !== "function" ||
-            originalStartMatch.__ypWatcherCheckBound
-        ) {
-            return;
-        }
-
-        const wrappedStartMatch = async function (...args) {
-            const result =
-                await originalStartMatch.apply(this, args);
-
-            await ensureBottomWatcher();
-
-            return result;
-        };
-
-        wrappedStartMatch.__ypWatcherCheckBound = true;
-        window.startMatch = wrappedStartMatch;
-    }
-
-
-    // ========================================
-    // 表示更新
-    // ========================================
-
-    function repaint() {
-        if (typeof render === "function") {
-            render();
-        }
-
-        updateDashboard();
-    }
-
-
-    // ========================================
-    // 今回の操作前から待機していた人だけ補充
-    //
-    // limit は今回2試合／3試合で終了した人数。
-    // 今回新しく作られた再参加エントリーは
-    // snapshot に含まれないため同じ回では呼ばれない。
-    // ========================================
-
-    async function fillFromPreviousWaitingQueue(
-        waitingSnapshotIds,
-        limit
-    ) {
-        if (
-            !Array.isArray(waitingSnapshotIds) ||
-            limit <= 0
-        ) {
-            return 0;
-        }
-
-        let added = 0;
-
-        const cap = await readCapacity();
-
-        for (const id of waitingSnapshotIds) {
-            if (added >= limit) break;
-            if (activeMembers().length >= cap) break;
-
-            await loadParticipants();
-
-            const candidate = participants.find(
-                person =>
-                    person.id === id &&
-                    isMainWaitingCandidate(person)
-            );
-
-            // すでに待機列から外れた人は飛ばす。
-            if (!candidate) continue;
-
-            const playingCount = playingMembers().length;
-            const watchingCount = watchingMembers().length;
-
-            let nextState;
-
-            if (watchingCount > 0) {
-                // 既存の観戦者数を維持しながら参加枠に入れる。
-                if (playingCount < cap - watchingCount) {
-                    nextState = "playing";
-                } else {
-                    break;
-                }
-            } else {
-                // 観戦者がいなければ満員時の最後尾を観戦にする。
-                if (playingCount < cap - 1) {
-                    nextState = "playing";
-                } else {
-                    nextState = "watching";
-                }
-            }
-
-            console.log(
-                "[Main Lobby] 今回の事前待機者から補充:",
-                candidate.name,
-                "display_order:",
-                candidate.display_order,
-                "状態:",
-                nextState
-            );
-
-            await updateState(candidate, nextState);
-            await loadParticipants();
-
-            added++;
-        }
-
-        return added;
-    }
-
-
-    // ========================================
-    // 試合終了＋1・ローテーション
-    //
-    // 事前待機列を保存し、終了者が空けた分だけ補充。
-    // 前回の観戦者（最大1人）は次の参加者一覧の先頭へ。
-    // ========================================
-
-    async function finishRoundAndRotate() {
-        if (!currentSessionId || roundBusy) return;
-
-        const currentPlayers =
-            playingMembers()
-                .slice()
-                .sort(orderCompare);
-
-        // ★操作前の待機列を保存する。
-        // 今回追加される再参加者はこの配列に入らない。
-        const waitingSnapshotIds =
-            mainWaitingQueue().map(person => person.id);
-
-        const cap = await readCapacity();
-
-        if (!currentPlayers.length) {
-            alert(
-                "現在、試合数を進める参加中メンバーはいません。"
-            );
-            return;
-        }
-
-        const ok = confirm(
-            `参加中の${currentPlayers.length}人の試合数を＋1します。\n` +
-            "通常の人は2試合、観戦経験のある人は3試合で交代します。\n" +
-            "前回観戦していた人を参加状態に戻し、その一つ上の人を観戦にします。\n" +
-            "今回終了した人数分だけ、操作前から待機していた人を補充します。\n" +
-            `定員：${cap}人\n\n実行しますか？`
-        );
-
-        if (!ok) return;
-
-        roundBusy = true;
-        suppressAuto = true;
-
-        if (roundButton) {
-            roundButton.disabled = true;
-            roundButton.textContent = "処理中…";
-        }
-
-        repaint();
-
-        const failed = [];
-        let success = 0;
-        let finishedCount = 0;
-
-        try {
-            // ローテーション開始時点で観戦者を1人に正規化する。
-            const watchersAtRoundStart = watchingMembers()
-                .slice()
-                .sort(orderCompare);
-            const previousWatcherIds = new Set(
-                watchersAtRoundStart.map(person => person.id)
-            );
-
-            if (watchersAtRoundStart.length > 1) {
-                const keepId = watchersAtRoundStart[watchersAtRoundStart.length - 1].id;
-                for (const watcher of watchersAtRoundStart) {
-                    if (watcher.id !== keepId) {
-                        await updateState(watcher, "playing");
-                    }
-                }
-                await loadParticipants();
-            }
-
-            const oldWatchers = watchingMembers()
-                .slice()
-                .sort(orderCompare)
-                .slice(-1);
-
-            // --------------------------------
-            // 1. 参加中の人だけ試合数を＋1
-            // --------------------------------
-
-            for (const snapshot of currentPlayers) {
-                try {
-                    const person =
-                        participants.find(p => p.id === snapshot.id) ||
-                        snapshot;
-
-                    const target = getMatchTarget(person);
-                    const count = window.getMatchCount(person);
-                    const nextCount = Math.min(target, count + 1);
-
-                    if (nextCount <= count) continue;
-
-                    if (nextCount >= target) {
-                        // まず現在のエントリーを終了状態にする。
-                        const { data, error } = await supabaseClient
-                            .from("participants")
-                            .update({
-                                status: "finished",
-                                lobby_state: "exchange",
-                                match_count: target,
-                                first_participation_pending: false,
-                                room_id: null
-                            })
-                            .eq("id", person.id)
-                            .eq("session_id", currentSessionId)
-                            .eq("status", "playing")
-                            .select("id");
-
-                        if (error) throw error;
-
-                        if (!data?.length) {
-                            throw new Error(
-                                "終了状態への更新に失敗しました。"
-                            );
-                        }
-
-                        // 空いた枠の数として先に記録する。
-                        finishedCount++;
-
-                        updateLocal(person.id, {
-                            status: "finished",
-                            lobby_state: "exchange",
-                            match_count: target,
-                            first_participation_pending: false,
-                            room_id: null
-                        });
-
-                        await loadParticipants();
-
-                        const latest =
-                            participants.find(p => p.id === person.id) ||
-                            person;
-
-                        // 次の再参加エントリーを作成する。
-                        const created = await createRejoinEntry(latest);
-
-                        if (!created) {
-                            throw new Error(
-                                "再参加待機への追加に失敗しました。"
-                            );
-                        }
-
-                        await loadParticipants();
-
-                    } else {
-                        // まだ規定回数に達していなければ参加中に残す。
-                        const { error } = await supabaseClient
-                            .from("participants")
-                            .update({
-                                match_count: nextCount,
-                                first_participation_pending: false,
-                                lobby_state: "playing",
-                                status: "playing"
-                            })
-                            .eq("id", person.id)
-                            .eq("session_id", currentSessionId)
-                            .eq("status", "playing");
-
-                        if (error) throw error;
-
-                        updateLocal(person.id, {
-                            match_count: nextCount,
-                            first_participation_pending: false,
-                            lobby_state: "playing",
-                            status: "playing"
-                        });
-                    }
-
-                    success++;
-
-                } catch (error) {
-                    console.error(
-                        "[Main Lobby] 試合数更新エラー:",
-                        snapshot.name,
-                        error
-                    );
-
-                    failed.push(snapshot.name || "名前不明");
-                }
-            }
-
-            await loadParticipants();
-
-
-            // --------------------------------
-            // 2. 前回の観戦者を参加状態に戻す
-            // --------------------------------
-
-            const promotedIds = [];
-
-            for (const oldWatcher of oldWatchers) {
-                const latest = participants.find(
-                    person =>
-                        person.id === oldWatcher.id &&
-                        isMainWaitingCandidate(person) === false &&
-                        (
-                            person.status === "playing" ||
-                            person.status === "viewer"
-                        ) &&
-                        stateOf(person) === "watching"
-                );
-
-                if (!latest) continue;
-
-                await updateState(latest, "playing");
-                promotedIds.push(latest.id);
-
-                await loadParticipants();
-
-                console.log(
-                    "[Main Lobby] 前回の観戦者を参加状態へ:",
-                    latest.name
-                );
-            }
-
-
-            // --------------------------------
-            // 3. 前回観戦者以外の最後尾を観戦状態へ
-            //    前回観戦していた1人だけを交代する
-            // --------------------------------
-
-            const rotationCount = promotedIds.length;
-
-            if (rotationCount > 0) {
-                const promotedSet = new Set(promotedIds);
-
-                const candidates = playingMembers()
-                    .filter(person =>
-                        !promotedSet.has(person.id) &&
-                        !previousWatcherIds.has(person.id)
-                    )
-                    .sort(orderCompare);
-
-                const nextWatchers =
-                    candidates.slice(-rotationCount);
-
-                for (const person of nextWatchers) {
-                    await updateState(person, "watching");
-
-                    await loadParticipants();
-
-                    console.log(
-                        "[Main Lobby] 新しい観戦者:",
-                        person.name
-                    );
-                }
-            }
-
-
-            // --------------------------------
-            // 4. 前回待機していた人から、
-            //    終了者が空けた枠の数だけ補充
-            // --------------------------------
-
-            // 待機者の補充・並び替えが完了するまでロックを維持する。
-            const added = await fillFromPreviousWaitingQueue(
-                waitingSnapshotIds,
-                finishedCount
-            );
-
-            await loadParticipants();
-
-
-            // --------------------------------
-            // 5. 前回観戦者を最上位、
-            //    現在の観戦者を一番下に並べる
-            // --------------------------------
-
-            await reorderActiveDisplayOrder(promotedIds);
-
-            await loadParticipants();
-            repaint();
-
-            let message =
-                `${success}人の試合数を更新しました。\n` +
-                `${finishedCount}人が規定試合数に達しました。\n` +
-                `${added}人を、今回の操作前から待機していた人の中から補充しました。\n` +
-                "前回観戦していた人を参加中一覧の上位に移動しました。";
-
-            if (failed.length) {
-                message +=
-                    `\n\n処理できなかった参加者：\n${failed.join("、")}`;
-            }
-
-            alert(message);
-
-        } catch (error) {
-            console.error(
-                "[Main Lobby] 試合終了＋1エラー:",
-                error
-            );
-
-            alert(
-                "試合終了後の処理に失敗しました。参加者一覧とブラウザのConsoleを確認してください。"
-            );
-
-        } finally {
-            suppressAuto = false;
-            roundBusy = false;
-
-            if (roundButton) {
-                roundButton.disabled = false;
-                roundButton.textContent =
-                    "🎮 今の試合終了（試合数＋1・自動交代）";
-            }
-
-            await loadParticipants();
-            repaint();
-        }
-    }
-
-
-    // ========================================
-    // 試合終了ボタンを差し替える
-    // ========================================
-
-    function bindRoundButton() {
-        const original =
-            document.getElementById("bulkFinishOneMatchButton");
-
-        if (!original) return;
-
-        if (original.dataset.ypRotationBound === "true") {
-            roundButton = original;
-            return;
-        }
-
-        const replacement = original.cloneNode(true);
-
-        replacement.id = "bulkFinishOneMatchButton";
-        replacement.dataset.ypRotationBound = "true";
-
-        replacement.textContent =
-            "🎮 今の試合終了（試合数＋1・自動交代）";
-
-        original.replaceWith(replacement);
-
-        replacement.addEventListener(
-            "click",
-            finishRoundAndRotate
-        );
-
-        roundButton = replacement;
-    }
-
-
-    // ========================================
-    // ロビー人数表示
-    // ========================================
-
-    function updateDashboard() {
-        const dashboard =
-            document.getElementById("lobbyDashboard");
-
-        if (!dashboard || dashboard.children.length < 2) return;
-
-        const active = activeMembers();
-
-        const playing =
-            active.filter(p => stateOf(p) === "playing").length;
-
-        const watching =
-            active.filter(p => stateOf(p) === "watching").length;
-
-        const waiting =
-            participants.filter(isMainWaitingCandidate).length;
-
-        const exchange =
-            participants.filter(
-                p =>
-                    isMainWaitingCandidate(p) &&
-                    stateOf(p) === "exchange"
-            ).length;
-
-        const title =
-            `🎮 メインロビー ${active.length} / ${capacity}人`;
-
-        const stats =
-            `🟢 参加中 ${playing} / ${capacity}人　` +
-            `👀 観戦 ${watching}人　` +
-            `🟡 待機中 ${waiting}人　` +
-            `🔄 交代待ち ${exchange}人`;
-
-        if (dashboard.children[0].textContent !== title) {
-            dashboard.children[0].textContent = title;
-            dashboard.children[0].style.fontWeight = "bold";
-            dashboard.children[0].style.marginBottom = "8px";
-        }
-
-        if (dashboard.children[1].textContent !== stats) {
-            dashboard.children[1].textContent = stats;
-            dashboard.children[1].style.marginBottom = "8px";
-        }
-    }
-
-    function observeDashboard() {
-        const dashboard =
-            document.getElementById("lobbyDashboard");
-
-        if (!dashboard || dashboardObserver) return;
-
-        dashboardObserver = new MutationObserver(updateDashboard);
-
-        dashboardObserver.observe(
-            dashboard,
-            {
-                childList: true,
-                subtree: true,
-                characterData: true
-            }
-        );
-
-        updateDashboard();
-    }
-
-
-    // ========================================
-    // 配信者名設定
-    // ========================================
 
     function addHostNameControl() {
         const panel =
@@ -1349,152 +398,1083 @@
             "display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;padding-top:12px;border-top:1px solid #555;";
 
         block.innerHTML = `
-            <label
-                for="mainLobbyHostNameInput"
-                style="font-size:13px;color:#ddd;"
-            >
-                配信者アカウント名（定員から除外）
-            </label>
-
-            <input
-                id="mainLobbyHostNameInput"
-                type="text"
-                maxlength="60"
-                placeholder="例：@ゆうぽんちゃんねる（任意）"
-                style="flex:1;min-width:200px;padding:9px;border:0;border-radius:7px;font-size:14px;"
-            >
-
-            <button
-                id="saveMainLobbyHostName"
-                type="button"
-                style="padding:9px 12px;border:0;border-radius:7px;background:#398bd4;color:#fff;font-weight:bold;cursor:pointer;"
-            >
-                配信者名を保存
-            </button>
-
-            <div
-                id="mainLobbyHostNameStatus"
-                style="width:100%;font-size:12px;color:#bbb;"
-            >
-                空欄なら名前による除外は行いません。
-            </div>
+            <label for="mainLobbyHostNameInput" style="font-size:13px;color:#ddd;">配信者アカウント名（定員から除外）</label>
+            <input id="mainLobbyHostNameInput" type="text" maxlength="60" placeholder="例：@ゆうぽんちゃんねる（任意）" style="flex:1;min-width:200px;padding:9px;border:0;border-radius:7px;font-size:14px;">
+            <button id="saveMainLobbyHostName" type="button" style="padding:9px 12px;border:0;border-radius:7px;background:#398bd4;color:#fff;font-weight:bold;cursor:pointer;">配信者名を保存</button>
+            <div id="mainLobbyHostNameStatus" style="width:100%;font-size:12px;color:#bbb;">空欄なら名前による除外は行いません。</div>
         `;
 
         panel.appendChild(block);
 
         document
             .getElementById("saveMainLobbyHostName")
-            .addEventListener("click", saveHostName);
+            .addEventListener("click", async () => {
+                const input =
+                    document.getElementById("mainLobbyHostNameInput");
+
+                const status =
+                    document.getElementById("mainLobbyHostNameStatus");
+
+                const button =
+                    document.getElementById("saveMainLobbyHostName");
+
+                if (!input || !button) return;
+
+                const value = String(input.value || "").trim();
+
+                button.disabled = true;
+                button.textContent = "保存中…";
+
+                try {
+                    const { error } = await supabaseClient
+                        .from("app_settings")
+                        .upsert({
+                            key: HOST_NAME_KEY,
+                            value,
+                            updated_at: new Date().toISOString()
+                        }, { onConflict: "key" });
+
+                    if (error) throw error;
+
+                    hostName = value;
+
+                    if (window.YPQueueRules) {
+                        window.YPQueueRules.setHostName(value);
+                    }
+
+                    if (status) {
+                        status.textContent = value
+                            ? `配信者名「${value}」を定員計算から除外します。`
+                            : "配信者名を空欄にしました。";
+                    }
+
+                    await loadParticipants();
+                    repaint();
+
+                } catch (error) {
+                    console.error("[Main Lobby] 配信者名保存エラー:", error);
+                    alert("配信者名を保存できませんでした。");
+
+                } finally {
+                    button.disabled = false;
+                    button.textContent = "配信者名を保存";
+                }
+            });
     }
 
-    async function loadHostName() {
+    // ========================================
+    // スナップショット保存／読み込み
+    // ========================================
+
+    async function saveMatchState(state) {
+        const { error } = await supabaseClient
+            .from("app_settings")
+            .upsert({
+                key: MATCH_STATE_KEY,
+                value: JSON.stringify(state),
+                updated_at: new Date().toISOString()
+            }, { onConflict: "key" });
+
+        if (error) throw error;
+        matchState = state;
+    }
+
+    async function loadMatchState() {
         try {
-            const { data, error } = await supabaseClient
-                .from("app_settings")
-                .select("value")
-                .eq("key", HOST_NAME_KEY)
-                .maybeSingle();
+            const value = await readSetting(MATCH_STATE_KEY);
 
-            if (error) throw error;
-
-            hostName =
-                data?.value == null
-                    ? ""
-                    : String(data.value).trim();
-
-            if (window.YPQueueRules) {
-                window.YPQueueRules.setHostName(hostName);
+            if (!value) {
+                matchState = null;
+                return null;
             }
 
-            const input =
-                document.getElementById("mainLobbyHostNameInput");
+            let parsed;
 
-            const status =
-                document.getElementById("mainLobbyHostNameStatus");
-
-            if (input) input.value = hostName;
-
-            if (status) {
-                status.textContent =
-                    hostName
-                        ? `配信者名「${hostName}」を定員計算から除外します。`
-                        : "空欄なら名前による除外は行いません。";
+            try {
+                parsed = JSON.parse(value);
+            } catch (error) {
+                throw new Error("保存済み試合データをJSONとして読み取れません。");
             }
+
+            if (!parsed || parsed.session_id !== currentSessionId) {
+                matchState = null;
+                return null;
+            }
+
+            matchState = parsed;
+            return parsed;
 
         } catch (error) {
-            console.error(
-                "[Main Lobby] 配信者名読込エラー:",
-                error
-            );
+            console.error("[Main Lobby] 試合状態の読み込みエラー:", error);
+            throw error;
         }
     }
 
-    async function saveHostName() {
-        const input =
-            document.getElementById("mainLobbyHostNameInput");
+    // ========================================
+    // DB状態変更
+    // ========================================
 
-        const status =
-            document.getElementById("mainLobbyHostNameStatus");
+    async function setParticipantState(id, nextState, extraPatch = {}) {
+        const patch = {
+            status: "playing",
+            lobby_state: nextState,
+            room_id: null,
+            ...extraPatch
+        };
 
-        const button =
-            document.getElementById("saveMainLobbyHostName");
+        if (nextState === "playing") {
+            patch.playing_started_at = new Date().toISOString();
+            patch.first_participation_pending = false;
+        }
 
-        if (!input || !button) return;
+        const { data, error } = await supabaseClient
+            .from("participants")
+            .update(patch)
+            .eq("id", id)
+            .eq("session_id", currentSessionId)
+            .select("id");
 
-        button.disabled = true;
-        button.textContent = "保存中…";
+        if (error) throw error;
 
-        const value = String(input.value || "").trim();
+        if (!data || data.length === 0) {
+            throw new Error(`参加者状態を更新できませんでした: ${id}`);
+        }
+
+        updateLocal(id, patch);
+    }
+
+    async function setWatcherBonus(id) {
+        // 試合終了時点でも実際に観戦状態だった人だけを優先対象にする。
+        // 試合中に辞退・削除・待機復帰した人にはボーナスを付けない。
+        const current = await readParticipant(id);
+
+        if (!current) return false;
+        if (!["playing", "viewer"].includes(current.status)) return false;
+        if (stateOf(current) !== "watching") return false;
+        if (current.watcher_bonus === true) return true;
+
+        const { data, error } = await supabaseClient
+            .from("participants")
+            .update({ watcher_bonus: true })
+            .eq("id", id)
+            .eq("session_id", currentSessionId)
+            .in("status", ["playing", "viewer"])
+            .eq("lobby_state", "watching")
+            .select("id");
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+            const latest = await readParticipant(id);
+
+            if (
+                !latest ||
+                !["playing", "viewer"].includes(latest.status) ||
+                stateOf(latest) !== "watching"
+            ) {
+                return false;
+            }
+
+            if (latest.watcher_bonus === true) return true;
+
+            throw new Error(`観戦優先フラグを保存できませんでした: ${id}`);
+        }
+
+        updateLocal(id, { watcher_bonus: true });
+        return true;
+    }
+
+    async function ensureRejoinEntry(person) {
+        // 途中再開時に再参加行を二重作成しない。
+        let query = supabaseClient
+            .from("participants")
+            .select("id")
+            .eq("session_id", currentSessionId)
+            .eq("status", "waiting")
+            .eq("note", "rejoin");
+
+        if (
+            person.user_id !== null &&
+            person.user_id !== undefined &&
+            person.user_id !== ""
+        ) {
+            query = query.eq("user_id", person.user_id);
+        } else {
+            query = query
+                .eq("name", person.name)
+                .eq("source", person.source || "admin");
+        }
+
+        const { data, error } = await query.limit(1);
+
+        if (error) throw error;
+        if (data && data.length) return true;
+
+        await loadParticipants();
+
+        if (typeof createRejoinEntry !== "function") {
+            throw new Error("再参加待機の作成関数が見つかりません。");
+        }
+
+        const created = await createRejoinEntry(person);
+
+        if (!created) {
+            throw new Error(`${person.name}さんの再参加待機を作成できませんでした。`);
+        }
+
+        await loadParticipants();
+        return true;
+    }
+
+    // ========================================
+    // 観戦者の整備
+    // watcher_bonus はここでは付けない。
+    // 実際に1試合観戦した後、試合終了処理で付与する。
+    // ========================================
+
+    async function ensureBottomWatcher() {
+        if (finishBusy) return;
+
+        if (
+            matchState &&
+            (matchState.status === "running" ||
+             matchState.status === "processing")
+        ) {
+            return;
+        }
+
+        const cap = await readCapacity();
+
+        let active = activeMembers();
+        let watchers = watchingMembers();
+
+        if (watchers.length > 1) {
+            const keep = watchers[watchers.length - 1];
+
+            for (const watcher of watchers) {
+                if (watcher.id !== keep.id) {
+                    await setParticipantState(watcher.id, "playing");
+                }
+            }
+
+            await loadParticipants();
+
+            active = activeMembers();
+            watchers = watchingMembers();
+        }
+
+        if (watchers.length > 0) {
+            await reorderActiveDisplayOrder();
+            await loadParticipants();
+            return;
+        }
+
+        if (active.length < cap || active.length === 0) return;
+
+        const candidate = playingMembers()
+            .filter(person => person.watcher_bonus !== true)
+            .sort(orderCompare)
+            .slice(-1)[0];
+
+        if (!candidate) return;
+
+        await setParticipantState(candidate.id, "watching");
+        await loadParticipants();
+        await reorderActiveDisplayOrder();
+        await loadParticipants();
+    }
+
+    // ========================================
+    // 試合開始ボタン／終了ボタン
+    // ========================================
+
+    function ensureControls() {
+        const oldAllButton =
+            document.getElementById("finishAllPlayingButton");
+
+        if (oldAllButton) oldAllButton.remove();
+
+        let end =
+            document.getElementById("bulkFinishOneMatchButton");
+
+        if (!end) {
+            const playingList =
+                document.getElementById("playingList");
+
+            const parent =
+                playingList && playingList.parentElement;
+
+            if (!parent) return;
+
+            end = document.createElement("button");
+            end.id = "bulkFinishOneMatchButton";
+            end.type = "button";
+            end.className = "finish";
+
+            parent.insertBefore(end, playingList);
+        }
+
+        // script.js が登録した旧クリックイベントを除去して付け直す。
+        if (end.dataset.ypRotationV2Bound !== "true") {
+            const replacement = end.cloneNode(true);
+            replacement.id = "bulkFinishOneMatchButton";
+            end.replaceWith(replacement);
+            end = replacement;
+
+            end.dataset.ypRotationV2Bound = "true";
+            end.addEventListener("click", finishCurrentMatch);
+        }
+
+        end.textContent = "⏹ 試合終了・カウント更新";
+        roundButton = end;
+
+        let start =
+            document.getElementById("startCurrentMatchButton");
+
+        if (!start) {
+            start = document.createElement("button");
+            start.id = "startCurrentMatchButton";
+            start.type = "button";
+            start.className = "call";
+            start.style.marginBottom = "8px";
+
+            end.parentElement.insertBefore(start, end);
+        }
+
+        if (start.dataset.ypRotationV2Bound !== "true") {
+            start.dataset.ypRotationV2Bound = "true";
+            start.addEventListener("click", startCurrentMatch);
+        }
+
+        start.textContent = "▶ 試合開始・参加者を確定";
+        startButton = start;
+
+        let status =
+            document.getElementById("currentMatchStatus");
+
+        if (!status) {
+            status = document.createElement("div");
+            status.id = "currentMatchStatus";
+            status.className = "date";
+            status.style.margin = "6px 0 12px";
+
+            start.parentElement.insertBefore(status, start);
+        }
+
+        matchStatus = status;
+        updateMatchControls();
+    }
+
+    function updateMatchControls() {
+        if (!startButton || !roundButton || !matchStatus) return;
+
+        const running = matchState && (
+            matchState.status === "running" ||
+            matchState.status === "processing"
+        );
+
+        startButton.disabled =
+            Boolean(running || startBusy || finishBusy);
+
+        roundButton.disabled =
+            Boolean(!running || startBusy || finishBusy);
+
+        if (startBusy) {
+            matchStatus.textContent =
+                "試合開始時の参加者を保存しています…";
+
+        } else if (finishBusy) {
+            matchStatus.textContent =
+                "試合終了処理中です…";
+
+        } else if (running) {
+            const names = (matchState.playing || []).length;
+            const watchers = (matchState.watcher_ids || []).length;
+            const cycleLabel =
+                `第${Number(matchState.cycle_game_number) === 2 ? 2 : 1}戦 / 2戦`;
+
+            matchStatus.textContent =
+                matchState.status === "processing"
+                    ? `${cycleLabel}：前回の試合終了処理が未完了です。『試合終了・カウント更新』で再開できます。（参加確定 ${names}人／観戦 ${watchers}人）`
+                    : `${cycleLabel}：試合中。参加者 ${names}人を確定済み／観戦 ${watchers}人。試合終了後にカウントを更新してください。`;
+
+            roundButton.textContent =
+                matchState.status === "processing"
+                    ? "↻ 試合終了処理を再開"
+                    : "⏹ 試合終了・カウント更新";
+
+        } else {
+            const nextGameNumber = getNextCycleGameNumber();
+
+            matchStatus.textContent =
+                `次は第${nextGameNumber}戦 / 2戦。試合直前に『試合開始・参加者を確定』を押してください。開始後に加わった人は次の試合からカウントされます。`;
+
+            roundButton.textContent =
+                "⏹ 試合終了・カウント更新";
+        }
+    }
+
+    async function startCurrentMatch() {
+        if (startBusy || finishBusy) return;
+
+        startBusy = true;
+        updateMatchControls();
 
         try {
-            const { error } = await supabaseClient
-                .from("app_settings")
-                .upsert(
-                    {
-                        key: HOST_NAME_KEY,
-                        value,
-                        updated_at: new Date().toISOString()
-                    },
-                    { onConflict: "key" }
-                );
-
-            if (error) throw error;
-
-            hostName = value;
-
-            if (window.YPQueueRules) {
-                window.YPQueueRules.setHostName(value);
+            if (!currentSessionId) {
+                throw new Error("現在の配信IDがありません。");
             }
 
-            if (status) {
-                status.textContent =
-                    value
-                        ? `配信者名「${value}」を定員計算から除外します。`
-                        : "配信者名を空欄にしました。名前による除外は行いません。";
+            await loadParticipants();
+            await loadMatchState();
+
+            if (
+                matchState &&
+                (matchState.status === "running" ||
+                 matchState.status === "processing")
+            ) {
+                alert("すでに試合開始が記録されています。先に現在の試合を終了してください。");
+                return;
             }
 
-            repaint();
             await ensureBottomWatcher();
+            await loadParticipants();
+
+            const players =
+                playingMembers().sort(orderCompare);
+
+            const watchers =
+                watchingMembers().sort(orderCompare);
+
+            if (!players.length) {
+                alert("参加中の人がいません。先に参加者をロビーへ入れてください。");
+                return;
+            }
+
+            const cycleGameNumber = getNextCycleGameNumber();
+
+            const ok = confirm(
+                `部屋内 第${cycleGameNumber}戦 / 2戦目\n` +
+                `今回の試合参加者 ${players.length}人を確定します。\n` +
+                `観戦者 ${watchers.length}人はカウント対象外です。\n\n` +
+                "試合が始まる直前に実行してください。よろしいですか？"
+            );
+
+            if (!ok) return;
+
+            const snapshot = {
+                version: 2,
+                session_id: currentSessionId,
+                cycle_game_number: cycleGameNumber,
+                game_id: window.crypto &&
+                    typeof window.crypto.randomUUID === "function"
+                        ? window.crypto.randomUUID()
+                        : `game-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+
+                status: "running",
+                started_at: new Date().toISOString(),
+
+                playing: players.map(person => ({
+                    id: person.id,
+                    name: person.name,
+                    match_count_before: getMatchCount(person),
+                    target: getMatchTarget(person)
+                })),
+
+                watcher_ids: watchers.map(person => person.id),
+                waiting_ids: mainWaitingQueue().map(person => person.id),
+
+                processed_player_ids: [],
+                processed_watcher_ids: [],
+                finished_player_ids: []
+            };
+
+            await saveMatchState(snapshot);
+            updateMatchControls();
+
+            console.log(
+                "[Main Lobby] 試合参加者を確定:",
+                snapshot
+            );
 
         } catch (error) {
             console.error(
-                "[Main Lobby] 配信者名保存エラー:",
+                "[Main Lobby] 試合開始確定エラー:",
                 error
             );
 
             alert(
-                "配信者名を保存できませんでした。Supabaseの権限や通信を確認してください。"
+                `試合開始時の参加者を保存できませんでした。\n${error.message || error}`
             );
 
         } finally {
-            button.disabled = false;
-            button.textContent = "配信者名を保存";
+            startBusy = false;
+
+            if (currentSessionId) {
+                await loadParticipants().catch(error => console.error(error));
+            }
+
+            updateMatchControls();
+            repaint();
         }
     }
 
+    // ========================================
+    // 試合参加者の試合数を1だけ加算
+    // match_count_before を条件にして二重加算を防ぐ
+    // ========================================
+
+    async function readParticipant(id) {
+        const { data, error } = await supabaseClient
+            .from("participants")
+            .select("*")
+            .eq("id", id)
+            .eq("session_id", currentSessionId)
+            .maybeSingle();
+
+        if (error) throw error;
+        return data || null;
+    }
+
+    async function countSnapshotPlayer(snapshotPerson) {
+        let row = await readParticipant(snapshotPerson.id);
+
+        if (!row) {
+            console.warn(
+                "[Main Lobby] 試合中に削除された参加者はカウントをスキップ:",
+                snapshotPerson.name
+            );
+            return { deleted: true, finished: false };
+        }
+
+        const before =
+            Number(snapshotPerson.match_count_before) || 0;
+
+        const target =
+            Number(snapshotPerson.target) === 3 ? 3 : 2;
+
+        let current =
+            Number(row.match_count) || 0;
+
+        // 試合中に辞退された参加者は加算しない。
+        if (row.status === "cancelled") {
+            return {
+                deleted: false,
+                cancelled: true,
+                finished: false
+            };
+        }
+
+        if (current === before) {
+            const next = Math.min(target, before + 1);
+
+            const patch = {
+                match_count: next,
+                first_participation_pending: false
+            };
+
+            if (next >= target) {
+                patch.status = "finished";
+                patch.lobby_state = "exchange";
+                patch.room_id = null;
+            }
+
+            const { data, error } = await supabaseClient
+                .from("participants")
+                .update(patch)
+                .eq("id", snapshotPerson.id)
+                .eq("session_id", currentSessionId)
+                .eq("match_count", before)
+                .select("id");
+
+            if (error) throw error;
+
+            if (!data || data.length === 0) {
+                row = await readParticipant(snapshotPerson.id);
+
+                if (!row) {
+                    return { deleted: true, finished: false };
+                }
+
+                current = Number(row.match_count) || 0;
+
+                if (current !== next) {
+                    throw new Error(
+                        `${snapshotPerson.name}さんの試合数が同時に変更されました。現在値 ${current} / 記録前 ${before}`
+                    );
+                }
+
+            } else {
+                current = next;
+                row = { ...row, ...patch };
+            }
+
+        } else if (current !== before + 1) {
+            throw new Error(
+                `${snapshotPerson.name}さんの試合数が想定外です。開始時 ${before} / 現在 ${current}。二重加算を防ぐため停止しました。`
+            );
+        }
+
+        const finished = current >= target;
+
+        if (finished) {
+            // 途中で通信が切れ、match_countだけ保存された場合も終了状態を補完。
+            if (
+                row.status !== "finished" ||
+                row.lobby_state !== "exchange"
+            ) {
+                const { error } = await supabaseClient
+                    .from("participants")
+                    .update({
+                        status: "finished",
+                        lobby_state: "exchange",
+                        match_count: target,
+                        first_participation_pending: false,
+                        room_id: null
+                    })
+                    .eq("id", snapshotPerson.id)
+                    .eq("session_id", currentSessionId);
+
+                if (error) throw error;
+            }
+
+            row = {
+                ...row,
+                status: "finished",
+                lobby_state: "exchange",
+                match_count: target
+            };
+
+            updateLocal(snapshotPerson.id, {
+                status: "finished",
+                lobby_state: "exchange",
+                match_count: target,
+                first_participation_pending: false,
+                room_id: null
+            });
+
+            await ensureRejoinEntry(row);
+
+        } else {
+            updateLocal(snapshotPerson.id, {
+                match_count: current,
+                first_participation_pending: false
+            });
+        }
+
+        return { deleted: false, finished };
+    }
 
     // ========================================
-    // 定員変更
+    // 試合終了後のローテーション
+    // ========================================
+
+    async function promotePreviousWatchers(watcherIds) {
+        for (const id of watcherIds || []) {
+            // DBの最新状態を確認し、辞退した人を再び参加中へ戻さない。
+            const person = await readParticipant(id);
+
+            if (!person) continue;
+            if (!["playing", "viewer"].includes(person.status)) continue;
+            if (person.watcher_bonus !== true) continue;
+            if (stateOf(person) !== "watching") continue;
+
+            await setParticipantState(id, "playing");
+        }
+
+        await loadParticipants();
+    }
+
+    async function fillFromStartWaitingSnapshot(waitingIds, finishedCount) {
+        let added = 0;
+        const limit = Math.max(0, Number(finishedCount) || 0);
+        const cap = await readCapacity();
+
+        for (const id of waitingIds || []) {
+            if (added >= limit) break;
+            if (activeMembers().length >= cap) break;
+
+            const person =
+                participants.find(item => item.id === id);
+
+            if (!person || !isMainWaitingCandidate(person)) continue;
+
+            const activeOrders = activeMembers()
+                .map(item => Number(item.display_order))
+                .filter(Number.isFinite);
+
+            const nextOrder = activeOrders.length
+                ? Math.max(...activeOrders) + 1
+                : 1;
+
+            await setParticipantState(id, "playing", {
+                display_order: nextOrder,
+                first_participation_pending: false
+            });
+
+            added++;
+        }
+
+        if (added) await loadParticipants();
+        return added;
+    }
+
+    async function ensureBottomWatcherAfterRound() {
+        const cap = await readCapacity();
+
+        let active = activeMembers();
+        let watchers = watchingMembers();
+
+        if (watchers.length > 1) {
+            const keep = watchers[watchers.length - 1];
+
+            for (const watcher of watchers) {
+                if (watcher.id !== keep.id) {
+                    await setParticipantState(watcher.id, "playing");
+                }
+            }
+
+            await loadParticipants();
+
+            active = activeMembers();
+            watchers = watchingMembers();
+        }
+
+        if (active.length < cap || watchers.length > 0) return;
+
+        // 次部屋優先者は観戦順の対象から外す。
+        const candidate = playingMembers()
+            .filter(person => person.watcher_bonus !== true)
+            .sort(orderCompare)
+            .slice(-1)[0];
+
+        if (candidate) {
+            await setParticipantState(candidate.id, "watching");
+            await loadParticipants();
+        }
+    }
+
+    async function finishCurrentMatch() {
+        if (finishBusy || startBusy) return;
+
+        finishBusy = true;
+        updateMatchControls();
+
+        try {
+            if (!currentSessionId) {
+                throw new Error("現在の配信IDがありません。");
+            }
+
+            const stored = await loadMatchState();
+
+            if (
+                !stored ||
+                !["running", "processing"].includes(stored.status)
+            ) {
+                alert(
+                    "試合開始時の参加者記録がありません。試合前に『試合開始・参加者を確定』を押してください。"
+                );
+                return;
+            }
+
+            if (stored.status === "running") {
+                const ok = confirm(
+                    `試合参加者 ${(stored.playing || []).length}人のカウントを更新します。\n` +
+                    `観戦者 ${(stored.watcher_ids || []).length}人は今回の試合数に加算しません。\n\n実行しますか？`
+                );
+
+                if (!ok) return;
+            }
+
+            stored.status = "processing";
+            await saveMatchState(stored);
+            updateMatchControls();
+
+            await loadParticipants();
+
+            const failures = [];
+            const processed = new Set(
+                stored.processed_player_ids || []
+            );
+            const finishedIds = new Set(
+                stored.finished_player_ids || []
+            );
+
+            for (const snapshotPerson of stored.playing || []) {
+                try {
+                    const result =
+                        await countSnapshotPlayer(snapshotPerson);
+
+                    processed.add(snapshotPerson.id);
+
+                    if (result.finished) {
+                        finishedIds.add(snapshotPerson.id);
+                    }
+
+                    stored.processed_player_ids =
+                        Array.from(processed);
+
+                    stored.finished_player_ids =
+                        Array.from(finishedIds);
+
+                    await saveMatchState(stored);
+
+                } catch (error) {
+                    console.error(
+                        "[Main Lobby] 試合カウント更新エラー:",
+                        snapshotPerson.name,
+                        error
+                    );
+
+                    failures.push(
+                        `${snapshotPerson.name}: ${error.message || error}`
+                    );
+                }
+            }
+
+            // 今回の試合を実際に最後まで観戦した人だけを次部屋優先にする。
+            const processedWatchers = new Set(
+                stored.processed_watcher_ids || []
+            );
+
+            for (const watcherId of stored.watcher_ids || []) {
+                if (processedWatchers.has(watcherId)) continue;
+
+                try {
+                    await setWatcherBonus(watcherId);
+
+                    processedWatchers.add(watcherId);
+
+                    stored.processed_watcher_ids =
+                        Array.from(processedWatchers);
+
+                    await saveMatchState(stored);
+
+                } catch (error) {
+                    failures.push(
+                        `観戦者 ${watcherId}: ${error.message || error}`
+                    );
+                }
+            }
+
+            if (failures.length) {
+                stored.status = "processing";
+                await saveMatchState(stored);
+
+                await loadParticipants();
+                repaint();
+
+                alert(
+                    "一部の処理が完了していません。\n" +
+                    "『試合終了処理を再開』で未完了分を続けられます。\n\n" +
+                    failures.join("\n")
+                );
+
+                return;
+            }
+
+            // 今回観戦した人は、次の試合では参加へ戻す。
+            await promotePreviousWatchers(stored.watcher_ids || []);
+
+            // 試合開始時点ですでに待機していた人から、
+            // 規定試合数に達した人数分だけ補充する。
+            const filled = await fillFromStartWaitingSnapshot(
+                stored.waiting_ids || [],
+                finishedIds.size
+            );
+
+            // 定員に達している場合、次の試合の最下位を観戦へ回す。
+            await ensureBottomWatcherAfterRound();
+
+            // 優先対象者 → 通常参加者 → 観戦者の順にする。
+            await reorderActiveDisplayOrder();
+
+            stored.status = "completed";
+            stored.completed_at = new Date().toISOString();
+            stored.finished_player_ids = Array.from(finishedIds);
+            stored.filled_waiting_count = filled;
+
+            await saveMatchState(stored);
+
+            await loadParticipants();
+            repaint();
+
+            const watcherNames = (stored.watcher_ids || [])
+                .map(id =>
+                    participants.find(person =>
+                        person.id === id &&
+                        person.watcher_bonus === true
+                    )?.name
+                )
+                .filter(Boolean);
+
+            alert(
+                `第${Number(stored.cycle_game_number) === 2 ? 2 : 1}戦の試合終了処理が完了しました。\n` +
+                `カウント対象：${(stored.playing || []).length}人\n` +
+                `規定試合数に達して交代：${finishedIds.size}人\n` +
+                `待機列から補充：${filled}人\n` +
+                `今回観戦して次部屋優先：${watcherNames.length ? watcherNames.join("、") : "なし"}`
+            );
+
+        } catch (error) {
+            console.error(
+                "[Main Lobby] 試合終了処理エラー:",
+                error
+            );
+
+            alert(
+                `試合終了処理でエラーが発生しました。\n${error.message || error}\n\n` +
+                "状態は保存されているため、再読み込み後に再開できる場合があります。"
+            );
+
+        } finally {
+            finishBusy = false;
+
+            await loadParticipants().catch(error => console.error(error));
+
+            updateMatchControls();
+            repaint();
+        }
+    }
+
+    // ========================================
+    // display_order を優先順に整える
+    // ========================================
+
+    async function reorderActiveDisplayOrder() {
+        const active = activeMembers();
+
+        if (!active.length) return;
+
+        const priority = active
+            .filter(person =>
+                person.watcher_bonus === true &&
+                stateOf(person) === "playing"
+            )
+            .sort(orderCompare);
+
+        const ordinary = active
+            .filter(person =>
+                person.watcher_bonus !== true &&
+                stateOf(person) === "playing"
+            )
+            .sort(orderCompare);
+
+        const watchers = active
+            .filter(person => stateOf(person) === "watching")
+            .sort(orderCompare);
+
+        const ordered = [
+            ...priority,
+            ...ordinary,
+            ...watchers
+        ];
+
+        const orders = [...new Set(
+            active
+                .map(person => Number(person.display_order))
+                .filter(Number.isFinite)
+        )].sort((a, b) => a - b);
+
+        let next = orders.length
+            ? orders[orders.length - 1] + 1
+            : 1;
+
+        while (orders.length < ordered.length) {
+            orders.push(next++);
+        }
+
+        for (let index = 0; index < ordered.length; index++) {
+            const person = ordered[index];
+            const desired = orders[index];
+
+            if (Number(person.display_order) === desired) continue;
+
+            const { error } = await supabaseClient
+                .from("participants")
+                .update({ display_order: desired })
+                .eq("id", person.id)
+                .eq("session_id", currentSessionId);
+
+            if (error) throw error;
+
+            updateLocal(person.id, {
+                display_order: desired
+            });
+        }
+    }
+
+    // ========================================
+    // 画面表示
+    // ========================================
+
+    function repaint() {
+        if (typeof window.render === "function") {
+            window.render();
+        }
+
+        removeLegacyControls();
+        updateMatchControls();
+        updateDashboard();
+    }
+
+    function updateDashboard() {
+        const dashboard =
+            document.getElementById("lobbyDashboard");
+
+        if (!dashboard || dashboard.children.length < 2) return;
+
+        const active = activeMembers();
+
+        const playing = active.filter(person =>
+            stateOf(person) === "playing"
+        ).length;
+
+        const watching = active.filter(person =>
+            stateOf(person) === "watching"
+        ).length;
+
+        const waiting = participants.filter(
+            isMainWaitingCandidate
+        ).length;
+
+        const priority = active.filter(person =>
+            person.watcher_bonus === true
+        ).length;
+
+        const title =
+            `🎮 メインロビー ${active.length} / ${capacity}人`;
+
+        const stats =
+            `🟢 参加中 ${playing}人　👀 観戦 ${watching}人　⭐ 次部屋優先 ${priority}人　🟡 待機 ${waiting}人`;
+
+        dashboard.children[0].textContent = title;
+        dashboard.children[0].style.fontWeight = "bold";
+        dashboard.children[0].style.marginBottom = "8px";
+
+        dashboard.children[1].textContent = stats;
+        dashboard.children[1].style.marginBottom = "8px";
+    }
+
+    function observeDashboard() {
+        const dashboard =
+            document.getElementById("lobbyDashboard");
+
+        if (!dashboard || dashboardObserver) return;
+
+        dashboardObserver = new MutationObserver(updateDashboard);
+
+        dashboardObserver.observe(dashboard, {
+            childList: true,
+            subtree: true,
+            characterData: true
+        });
+
+        updateDashboard();
+    }
+
+    // ========================================
+    // 定員保存後の更新
     // ========================================
 
     function bindCapacitySaveRefresh() {
@@ -1503,114 +1483,100 @@
 
         if (
             !button ||
-            button.dataset.ypCapacityRefreshBound === "true"
+            button.dataset.ypRotationV2Bound === "true"
         ) {
             return;
         }
 
-        button.dataset.ypCapacityRefreshBound = "true";
+        button.dataset.ypRotationV2Bound = "true";
 
         button.addEventListener("click", () => {
             setTimeout(async () => {
                 await readCapacity(true);
-
-                window.getRoomCapacity = () => capacity;
-
                 updateDashboard();
-                await ensureBottomWatcher();
+
+                if (!matchState || matchState.status === "completed") {
+                    await ensureBottomWatcher();
+                }
             }, 800);
         });
     }
 
-
     // ========================================
-    // 起動
+    // 初期化・定期監視
     // ========================================
 
-    // ボタンのクリック処理はSupabaseの初期読み込み完了を待たずに登録する。
-    bindRoundButton();
+    async function waitForSession() {
+        for (let i = 0; i < 100; i++) {
+            if (currentSessionId) return true;
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        return Boolean(currentSessionId);
+    }
 
     async function initialize() {
-        await readCapacity(true);
+        ensureControls();
+        removeLegacyControls();
 
+        await readCapacity(true);
         addHostNameControl();
         await loadHostName();
-
-        bindRoundButton();
-        bindStartMatchWatcherCheck();
         bindCapacitySaveRefresh();
 
-        await loadParticipants();
-        await ensureBottomWatcher();
+        await waitForSession();
 
+        if (!currentSessionId) {
+            updateMatchControls();
+            return;
+        }
+
+        await loadParticipants();
+        await loadMatchState();
+
+        // 完了済み、または試合状態がないときだけ初期観戦枠を整える。
+        if (!matchState || matchState.status === "completed") {
+            await ensureBottomWatcher();
+            await reorderActiveDisplayOrder();
+            await loadParticipants();
+        }
+
+        ensureControls();
+        removeLegacyControls();
         observeDashboard();
         updateDashboard();
+        updateMatchControls();
         repaint();
     }
 
-    initialize().catch(error =>
-        console.error(
-            "[Main Lobby] 初期化エラー:",
-            error
-        )
-    );
+    initialize().catch(error => {
+        console.error("[Main Lobby] 初期化エラー:", error);
 
-
-    // ========================================
-    // 手動参加開始後に観戦枠を確認
-    // ========================================
-
-    function bindStartMatchWatcherCheck() {
-        const originalStartMatch = window.startMatch;
-
-        if (
-            typeof originalStartMatch !== "function" ||
-            originalStartMatch.__ypWatcherCheckBound
-        ) {
-            return;
-        }
-
-        const wrappedStartMatch = async function (...args) {
-            const result =
-                await originalStartMatch.apply(this, args);
-
-            await ensureBottomWatcher();
-
-            return result;
-        };
-
-        wrappedStartMatch.__ypWatcherCheckBound = true;
-        window.startMatch = wrappedStartMatch;
-    }
-
-
-    // ========================================
-    // 定期処理
-    // 自動で空き枠を埋めない
-    // ========================================
+        alert(
+            `メインロビー試合管理の初期化に失敗しました。\n${error.message || error}`
+        );
+    });
 
     setInterval(async () => {
-        if (
-            roundBusy ||
-            suppressAuto ||
-            autoBusy ||
-            watcherEnforceBusy
-        ) {
-            return;
+        if (startBusy || finishBusy) return;
+
+        try {
+            await readCapacity();
+            addHostNameControl();
+            bindCapacitySaveRefresh();
+            ensureControls();
+            removeLegacyControls();
+            updateMatchControls();
+            updateDashboard();
+
+            // 試合中は観戦者を動かさない。
+            if (!matchState || matchState.status === "completed") {
+                await ensureBottomWatcher();
+            }
+
+        } catch (error) {
+            console.warn("[Main Lobby] 定期確認エラー:", error);
         }
-
-        await readCapacity();
-
-        bindRoundButton();
-        bindStartMatchWatcherCheck();
-        bindCapacitySaveRefresh();
-        addHostNameControl();
-
-        await ensureBottomWatcher();
-
-        observeDashboard();
-        updateDashboard();
-
-    }, 2500);
+    }, 5000);
 
 })();
