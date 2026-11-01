@@ -35,10 +35,12 @@
     let roundBusy = false;
     let suppressAuto = false;
     let watcherEnforceBusy = false;
+    let watcherMutationBusy = false;
 
-    // script.js 側の参加者操作を、ローテーション処理中は無効化する。
+    // 定期的な観戦枠チェックだけでは画面操作を止めない。
+    // 実際のローテーション、または観戦状態を書き換える間だけ操作を止める。
     window.ypIsMainLobbyRotationBusy = () =>
-        roundBusy || suppressAuto || autoBusy || watcherEnforceBusy;
+        roundBusy || suppressAuto || autoBusy || watcherMutationBusy;
 
     let roundButton = null;
     let dashboardObserver = null;
@@ -707,19 +709,46 @@
             return;
         }
 
+        // 定期チェックの多重起動だけを防ぐ。
+        // このフラグ自体では画面上のボタンを無効にしない。
         watcherEnforceBusy = true;
 
         try {
             const cap = await readCapacity();
 
-            await markExistingWatchersAsBonus();
-
             let active = activeMembers();
             let watchers = watchingMembers();
 
-            // 観戦者は常に最大1人。
-            // 古いデータ等で複数いる場合は、最後尾の1人だけを残す。
-            if (watchers.length > 1) {
+            const hasUnmarkedWatcher =
+                watchers.some(watcher => watcher.watcher_bonus !== true);
+
+            const needsWatcherNormalization =
+                watchers.length > 1;
+
+            const needsBottomWatcher =
+                active.length >= cap &&
+                active.length > 0 &&
+                watchers.length === 0;
+
+            // 問題がなければDB更新・一覧再読込・再描画を行わない。
+            // 以前は2.5秒ごとに同じ並び替えと再読込を繰り返していた。
+            if (
+                !hasUnmarkedWatcher &&
+                !needsWatcherNormalization &&
+                !needsBottomWatcher
+            ) {
+                return;
+            }
+
+            // 実際に状態を変更する間だけ参加者ボタンをロックする。
+            watcherMutationBusy = true;
+
+            if (hasUnmarkedWatcher) {
+                await markExistingWatchersAsBonus();
+            }
+
+            // 観戦者は最大1人。複数いる場合は最後尾の1人を残す。
+            if (needsWatcherNormalization) {
                 const keepId = watchers[watchers.length - 1].id;
 
                 for (const watcher of watchers) {
@@ -727,31 +756,25 @@
                         await updateState(watcher, "playing");
                     }
                 }
-
-                await loadParticipants();
-                active = activeMembers();
-                watchers = watchingMembers();
             }
 
-            // 定員未満なら観戦者の人数だけ整えて終了。
-            if (active.length < cap || active.length === 0) {
-                if (active.length > 0) {
-                    await reorderActiveDisplayOrder();
-                    await loadParticipants();
-                    repaint();
-                }
-                return;
-            }
+            active = activeMembers();
+            watchers = watchingMembers();
 
-            if (watchers.length === 0) {
+            // 定員に達していて観戦者がいない場合だけ、最後尾を観戦にする。
+            if (
+                active.length >= cap &&
+                active.length > 0 &&
+                watchers.length === 0
+            ) {
                 const bottom = playingMembers().at(-1);
 
                 if (bottom) {
                     await updateState(bottom, "watching");
-                    await loadParticipants();
                 }
             }
 
+            // 実際に補正が必要だった場合だけ順番を整えて画面を更新する。
             await reorderActiveDisplayOrder();
             await loadParticipants();
             repaint();
@@ -763,6 +786,7 @@
             );
 
         } finally {
+            watcherMutationBusy = false;
             watcherEnforceBusy = false;
         }
     }
@@ -1503,6 +1527,9 @@
     // 起動
     // ========================================
 
+    // ボタンのクリック処理はSupabaseの初期読み込み完了を待たずに登録する。
+    bindRoundButton();
+
     async function initialize() {
         await readCapacity(true);
 
@@ -1514,7 +1541,6 @@
         bindCapacitySaveRefresh();
 
         await loadParticipants();
-        await markExistingWatchersAsBonus();
         await ensureBottomWatcher();
 
         observeDashboard();
@@ -1580,7 +1606,6 @@
         bindCapacitySaveRefresh();
         addHostNameControl();
 
-        await markExistingWatchersAsBonus();
         await ensureBottomWatcher();
 
         observeDashboard();
