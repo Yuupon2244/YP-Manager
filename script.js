@@ -574,7 +574,7 @@ async function loadParticipants() {
                 ),
             lobby_state:
                 isChatOnlyPerson(person)
-                    ? "watching"
+                    ? "chat_only"
                     : person.lobby_state === "watching"
                         ? "watching"
                         : person.lobby_state === "playing"
@@ -662,7 +662,7 @@ function createPersonBox(
             ) &&
             Number(
                 person.display_order
-            ) <
+                ) <
                 1000000
         );
     if (
@@ -1016,13 +1016,38 @@ function getMatchCount(
 function isChatOnlyPerson(
     person
 ) {
+    if (!person) {
+        return false;
+    }
+
+    const status =
+        String(person.status || "").trim().toLowerCase();
+
+    const lobbyState =
+        String(person.lobby_state || "").trim().toLowerCase();
+
+    const source =
+        String(person.source || "").trim().toLowerCase();
+
+    const note =
+        String(person.note || "").trim().toLowerCase();
+
+    // DBの正式なチャット専用状態を最優先する。
+    if (
+        person.chat_only === true ||
+        status === "chat_only" ||
+        lobbyState === "chat_only" ||
+        source === "chat" ||
+        note === "chat_only"
+    ) {
+        return true;
+    }
+
+    // 旧データ互換。明示的に観戦中の人はチャット専用にしない。
     return (
-        person?.chat_only === true ||
-        person?.status === "chat_only" ||
-        person?.lobby_state === "chat_only" ||
-        person?.source === "chat" ||
-        person?.note === "chat_only" ||
-        person?.note === "viewer"
+        status === "viewer" &&
+        note === "viewer" &&
+        lobbyState !== "watching"
     );
 }
 function getLobbyState(
@@ -1076,6 +1101,19 @@ function getStateInfo(
         getLobbyState(
             person
         );
+    if (
+        state ===
+        "chat_only"
+    ) {
+        return {
+            icon:
+                "💬",
+            label:
+                "チャットのみ",
+            text:
+                "💬 チャットのみ"
+        };
+    }
     if (
         state ===
         "playing"
@@ -1924,6 +1962,7 @@ async function createRejoinEntry(
     person
 ) {
 
+
     const nextOrder =
         getNextOrderForGroup(
             true
@@ -2040,6 +2079,7 @@ async function setPlaying(
     person
 ) {
 
+
     if (
         !person
     ) {
@@ -2059,6 +2099,7 @@ async function setPlaying(
 async function returnToWaiting(
     person
 ) {
+
 
     if (
         !person
@@ -3578,7 +3619,7 @@ async function finishAllPlaying() {
     }
 
     alert(
-        `${successCount}人の移動が完了しました。\n\n処理できなかった参加者：\n${failedNames.join("、")}`
+        `${successCount}人の処理が完了しました。\n\n処理できなかった参加者：\n${failedNames.join("、")}`
     );
 }
 
@@ -3858,3 +3899,4 @@ if (
 
 // ========================================
 // 以上
+// ========================================

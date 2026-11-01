@@ -1,65 +1,47 @@
 // ========================================
 // YP-Manager Owner チャット利用者表示 v1.3.1
-// ・正式な chat_only 状態に対応
-// ・旧 viewer 状態との互換性を維持
-// ・通常の観戦者をチャット専用欄に混入させない
 // ========================================
 
 const chatViewerList =
-    document.getElementById(
-        "chatViewerList"
-    );
+    document.getElementById("chatViewerList");
 
 
-// ========================================
-// チャット専用判定
-// ========================================
+function isChatOnlyUserForDisplay(person) {
 
-function isChatOnlyAdminUser(person) {
+    if (typeof isChatOnlyPerson === "function") {
+        return isChatOnlyPerson(person);
+    }
+
+    if (
+        window.YPQueueRules &&
+        typeof window.YPQueueRules.isChatOnlyPerson === "function"
+    ) {
+        return window.YPQueueRules.isChatOnlyPerson(person);
+    }
 
     if (!person) {
         return false;
     }
 
-    const status =
-        String(person.status || "").trim().toLowerCase();
+    const status = String(person.status || "").trim().toLowerCase();
+    const lobbyState = String(person.lobby_state || "").trim().toLowerCase();
+    const source = String(person.source || "").trim().toLowerCase();
+    const note = String(person.note || "").trim().toLowerCase();
 
-    const lobbyState =
-        String(person.lobby_state || "").trim().toLowerCase();
-
-    const source =
-        String(person.source || "").trim().toLowerCase();
-
-    const note =
-        String(person.note || "").trim().toLowerCase();
-
-    // 現在の正式なDB状態
-    if (
+    return Boolean(
+        person.chat_only === true ||
         status === "chat_only" ||
         lobbyState === "chat_only" ||
-        person.chat_only === true ||
         source === "chat" ||
-        note === "chat_only"
-    ) {
-        return true;
-    }
-
-    // 旧データとの互換性
-    if (
-        status === "viewer" &&
-        note === "viewer"
-    ) {
-        return true;
-    }
-
-    // 通常の観戦者は表示しない
-    return false;
+        note === "chat_only" ||
+        (
+            status === "viewer" &&
+            note === "viewer" &&
+            lobbyState !== "watching"
+        )
+    );
 }
 
-
-// ========================================
-// チャット利用者一覧描画
-// ========================================
 
 function renderChatOnlyUsers() {
 
@@ -69,60 +51,45 @@ function renderChatOnlyUsers() {
 
     chatViewerList.innerHTML = "";
 
+    const list =
+        Array.isArray(participants)
+            ? participants
+            : [];
+
     const viewers =
-        (Array.isArray(participants) ? participants : [])
-            .filter(isChatOnlyAdminUser);
+        list.filter(isChatOnlyUserForDisplay);
 
-    viewers.forEach(
-        person => {
+    viewers.forEach(person => {
 
-            const {
-                personBox,
-                buttonsBox
-            } =
-                createPersonBox(person);
+        const {
+            personBox,
+            buttonsBox
+        } = createPersonBox(person);
 
+        const viewerNote =
+            document.createElement("div");
 
-            const viewerNote =
-                document.createElement("div");
+        viewerNote.className = "date";
+        viewerNote.textContent =
+            "待機列には入らず、チャットのみ利用中";
 
+        personBox.insertBefore(
+            viewerNote,
+            buttonsBox
+        );
 
-            viewerNote.className =
-                "date";
+        buttonsBox.appendChild(
+            createButton(
+                "削除",
+                "delete",
+                () => deletePerson(person.id, person.name)
+            )
+        );
 
-
-            viewerNote.textContent =
-                "待機列には入らず、チャットのみ利用中";
-
-
-            personBox.insertBefore(
-                viewerNote,
-                buttonsBox
-            );
-
-
-            buttonsBox.appendChild(
-                createButton(
-                    "削除",
-                    "delete",
-                    () =>
-                        deletePerson(
-                            person.id,
-                            person.name
-                        )
-                )
-            );
-
-
-            chatViewerList.appendChild(
-                personBox
-            );
-        }
-    );
-
+        chatViewerList.appendChild(personBox);
+    });
 
     if (viewers.length === 0) {
-
         showEmpty(
             chatViewerList,
             "現在、チャットのみの利用者はいません"
@@ -131,20 +98,12 @@ function renderChatOnlyUsers() {
 }
 
 
-// ========================================
-// メイン描画との連携
-// ========================================
+const originalOwnerRender = render;
 
-const originalOwnerRender =
-    render;
-
-render =
-    function () {
-
-        originalOwnerRender();
-
-        renderChatOnlyUsers();
-    };
+render = function () {
+    originalOwnerRender();
+    renderChatOnlyUsers();
+};
 
 
 renderChatOnlyUsers();
