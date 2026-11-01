@@ -532,14 +532,17 @@ function enableAdminInput() {
 // 現在配信の参加者だけ読み込み
 // ========================================
 async function loadParticipants() {
+
     if (window.YPQueueRules) {
         await window.YPQueueRules.refreshHostName(supabaseClient);
     }
+
     if (!currentSessionId) {
         participants = [];
         render();
         return;
     }
+
     const {
         data,
         error
@@ -554,44 +557,55 @@ async function loadParticipants() {
         .order("joined_at", {
             ascending: true
         });
+
     if (error) {
-        console.error(
-            "参加者読み込みエラー:",
-            error
-        );
+        console.error("参加者読み込みエラー:", error);
         return;
     }
+
+    // 配信者本人を全管理対象から除外
+    const excludedUserId =
+        "yt-UCVOZmByIHyBrI8Q7QGa_GDA";
+
     const nextParticipants =
-        (data || []).map(person => ({
-            ...person,
-            match_count:
-                getMatchCount(person),
-            first_participation_pending:
-                person.first_participation_pending === true ||
-                (
-                    person.first_participation_pending == null &&
-                    person.note === "initial"
-                ),
-            lobby_state:
-                isChatOnlyPerson(person)
-                    ? "chat_only"
-                    : person.lobby_state === "watching"
-                        ? "watching"
-                        : person.lobby_state === "playing"
-                            ? "playing"
-                            : person.status === "playing"
+        (data || [])
+            .filter(person =>
+                String(person.user_id || "").trim() !== excludedUserId
+            )
+            .map(person => ({
+                ...person,
+
+                match_count:
+                    getMatchCount(person),
+
+                first_participation_pending:
+                    person.first_participation_pending === true ||
+                    (
+                        person.first_participation_pending == null &&
+                        person.note === "initial"
+                    ),
+
+                lobby_state:
+                    isChatOnlyPerson(person)
+                        ? "chat_only"
+                        : person.lobby_state === "watching"
+                            ? "watching"
+                            : person.lobby_state === "playing"
                                 ? "playing"
-                                : person.status === "viewer"
-                                    ? "watching"
-                                    : person.lobby_state || "waiting"
-        }));
-    detectNewUrlParticipants(
-        nextParticipants
-    );
-    participants =
-        nextParticipants;
+                                : person.status === "playing"
+                                    ? "playing"
+                                    : person.status === "viewer"
+                                        ? "watching"
+                                        : person.lobby_state || "waiting"
+            }));
+
+    detectNewUrlParticipants(nextParticipants);
+
+    participants = nextParticipants;
+
     render();
 }
+
 // ========================================
 // 空欄表示
 // ========================================

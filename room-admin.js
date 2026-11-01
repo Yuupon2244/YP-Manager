@@ -885,70 +885,39 @@ async function loadParticipants() {
     }
 
     if (!currentRoom) {
-
-        participants =
-            [];
-
-
+        participants = [];
         return false;
     }
-
 
     const {
         data,
         error
-    } =
-        await roomAdminSupabase
-            .from(
-                "participants"
-            )
-            .select("*")
-            .eq(
-                "session_id",
-                currentRoom.session_id
-            )
-            .order(
-                "display_order",
-                {
-                    ascending:
-                        true,
-
-                    nullsFirst:
-                        false
-                }
-            )
-            .order(
-                "joined_at",
-                {
-                    ascending:
-                        true
-                }
-            );
-
+    } = await roomAdminSupabase
+        .from("participants")
+        .select("*")
+        .eq("session_id", currentRoom.session_id)
+        .order("display_order", {
+            ascending: true,
+            nullsFirst: false
+        })
+        .order("joined_at", {
+            ascending: true
+        });
 
     if (error) {
-
-        console.error(
-            "参加者取得エラー:",
-            error
-        );
-
-
-        connectionStatus.textContent =
-            "⚠️ 参加者取得エラー";
-
-
+        console.error("参加者取得エラー:", error);
+        connectionStatus.textContent = "⚠️ 参加者取得エラー";
         return false;
     }
 
-
-    participants =
-        data || [];
-
+    // 配信者本人を部屋管理からも除外
+    participants = (data || []).filter(person =>
+        String(person.user_id || "").trim() !==
+        "yt-UCVOZmByIHyBrI8Q7QGa_GDA"
+    );
 
     return true;
 }
-
 
 // ========================================
 // 初参加・再参加判定

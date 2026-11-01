@@ -164,8 +164,13 @@ function hasRoomAssignment(person) {
 }
 
 function isMainWaitingPerson(person) {
+
+    const excludedUserId =
+        "yt-UCVOZmByIHyBrI8Q7QGa_GDA";
+
     if (
         !person ||
+        String(person.user_id || "").trim() === excludedUserId ||
         isChatOnlyPerson(person) ||
         hasRoomAssignment(person)
     ) {
@@ -178,23 +183,12 @@ function isMainWaitingPerson(person) {
     const lobbyState =
         String(person.lobby_state || "").toLowerCase().trim();
 
-    /*
-     * status を最優先する。
-     * 試合後の再参加レコードは、
-     * status="waiting" / lobby_state="exchange"
-     * になる場合がある。
-     *
-     * lobby_state="exchange" だけを理由に
-     * 待機列から除外しない。
-     */
     if (status) {
         return status === "waiting";
     }
 
-    // status が未設定の旧データのみ補助判定する。
     return lobbyState === "waiting";
 }
-
 
 /* =====================================
    表示名の決定（ハイブリッド方式）
