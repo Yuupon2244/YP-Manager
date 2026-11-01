@@ -1,5 +1,5 @@
 // ========================================
-// YP-Manager URL参加ページ v1.3.7
+// YP-Manager URL参加ページ v1.3.8
 // 辞退・チャットのみ利用・状態復元統合版
 // ========================================
 
@@ -388,7 +388,7 @@ async function getMyActiveEntry() {
             .eq("session_id", currentSessionId)
             .in(
                 "status",
-                ["waiting", "viewer", "playing"]
+                ["waiting", "viewer", "playing", "chat_only"]
             )
             .order(
                 "joined_at",
@@ -472,32 +472,42 @@ async function getCurrentPosition(
         : index + 1;
 }
 
+
 // ========================================
 // 状態判定
 // ========================================
 
 function isChatOnlyEntry(entry) {
 
+    if (!entry) {
+        return false;
+    }
+
+    // script.js / queue-rules.js と同じ基準で判定する。
+    // 明示的なチャット専用フラグ・状態を最優先し、
+    // 古いデータは source / note も使って後方互換で判定する。
     return Boolean(
-        entry &&
-        entry.status === "viewer" &&
-        entry.lobby_state !== "watching"
+        entry.chat_only === true ||
+        entry.status === "chat_only" ||
+        entry.lobby_state === "chat_only" ||
+        entry.source === "chat" ||
+        entry.note === "chat_only" ||
+        entry.note === "viewer"
     );
 }
 
 
 function isWatchingEntry(entry) {
 
+    if (!entry || isChatOnlyEntry(entry)) {
+        return false;
+    }
+
+    // チャット専用ではない viewer は、従来仕様どおり観戦者として扱う。
     return Boolean(
-        entry &&
-        (
-            entry.lobby_state === "watching" ||
-            (
-                entry.status === "viewer" &&
-                entry.lobby_state !== "chat_only" &&
-                entry.note !== "viewer"
-            )
-        )
+        entry.lobby_state === "watching" ||
+        entry.status === "watching" ||
+        entry.status === "viewer"
     );
 }
 
@@ -1200,9 +1210,9 @@ async function joinAsViewer() {
                     entry
                 );
 
-                        if (
+            if (
                 updated.status !== "viewer" ||
-                !isChatOnlyEntry(updated)
+                updated.lobby_state !== "chat_only"
             ) {
 
                 throw new Error(
@@ -1269,6 +1279,7 @@ async function joinAsViewer() {
                 name,
                 status: "viewer",
                 lobby_state: "chat_only",
+                chat_only: true,
                 source: "url",
                 user_id: URL_USER_ID,
                 display_order: null,
