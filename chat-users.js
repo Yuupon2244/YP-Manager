@@ -1,5 +1,8 @@
 // ========================================
-// YP-Manager Owner チャット利用者表示 v1.3.0
+// YP-Manager Owner チャット利用者表示 v1.3.1
+// ・正式な chat_only 状態に対応
+// ・旧 viewer 状態との互換性を維持
+// ・通常の観戦者をチャット専用欄に混入させない
 // ========================================
 
 const chatViewerList =
@@ -8,25 +11,67 @@ const chatViewerList =
     );
 
 
+// ========================================
+// チャット専用判定
+// ========================================
+
+function isChatOnlyAdminUser(person) {
+
+    if (!person) {
+        return false;
+    }
+
+    const status =
+        String(person.status || "").trim().toLowerCase();
+
+    const lobbyState =
+        String(person.lobby_state || "").trim().toLowerCase();
+
+    const source =
+        String(person.source || "").trim().toLowerCase();
+
+    const note =
+        String(person.note || "").trim().toLowerCase();
+
+    // 現在の正式なDB状態
+    if (
+        status === "chat_only" ||
+        lobbyState === "chat_only" ||
+        person.chat_only === true ||
+        source === "chat" ||
+        note === "chat_only"
+    ) {
+        return true;
+    }
+
+    // 旧データとの互換性
+    if (
+        status === "viewer" &&
+        note === "viewer"
+    ) {
+        return true;
+    }
+
+    // 通常の観戦者は表示しない
+    return false;
+}
+
+
+// ========================================
+// チャット利用者一覧描画
+// ========================================
+
 function renderChatOnlyUsers() {
 
     if (!chatViewerList) {
-
         return;
     }
 
-
-    chatViewerList.innerHTML =
-        "";
-
+    chatViewerList.innerHTML = "";
 
     const viewers =
-        participants.filter(
-            person =>
-                person.status ===
-                "viewer"
-        );
-
+        (Array.isArray(participants) ? participants : [])
+            .filter(isChatOnlyAdminUser);
 
     viewers.forEach(
         person => {
@@ -35,15 +80,11 @@ function renderChatOnlyUsers() {
                 personBox,
                 buttonsBox
             } =
-                createPersonBox(
-                    person
-                );
+                createPersonBox(person);
 
 
             const viewerNote =
-                document.createElement(
-                    "div"
-                );
+                document.createElement("div");
 
 
             viewerNote.className =
@@ -80,10 +121,7 @@ function renderChatOnlyUsers() {
     );
 
 
-    if (
-        viewers.length ===
-        0
-    ) {
+    if (viewers.length === 0) {
 
         showEmpty(
             chatViewerList,
@@ -93,9 +131,12 @@ function renderChatOnlyUsers() {
 }
 
 
+// ========================================
+// メイン描画との連携
+// ========================================
+
 const originalOwnerRender =
     render;
-
 
 render =
     function () {
