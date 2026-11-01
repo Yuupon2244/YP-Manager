@@ -1,8 +1,8 @@
 // ========================================
-// YP-Manager URL参加者 全体共有チャット v1.3.4
-// ・通常参加者 / チャットのみ利用者の両方に対応
+// YP-Manager URL参加者 全体共有チャット v1.3.5
+// ・通常参加者 / 観戦者 / チャット専用利用者に対応
 // ・画像選択 / プレビュー / 自動圧縮 / 画像送信に対応
-// ・チャット専用利用者は status="viewer"
+// ・チャット専用利用者は status="chat_only"
 // ========================================
 
 const participantChatSection =
@@ -288,7 +288,8 @@ async function getMyParticipantChatEntry() {
                 [
                     "waiting",
                     "playing",
-                    "viewer"
+                    "viewer",
+                    "chat_only"
                 ]
             )
             .order(
@@ -304,7 +305,11 @@ async function getMyParticipantChatEntry() {
             "参加状態確認エラー:",
             error
         );
-        return null;
+
+        // 通信エラーと「有効な参加者がいない状態」を区別する。
+        // refreshParticipantChatAccess() 側で再試行できるよう、
+        // エラーを null に変換せず呼び出し元へ返す。
+        throw error;
     }
 
     return data && data.length > 0
@@ -381,9 +386,42 @@ async function refreshParticipantChatAccess() {
         return;
     }
 
-    const entry =
-        await getMyParticipantChatEntry();
+    let entry = null;
 
+    try {
+        entry = await getMyParticipantChatEntry();
+    } catch (error) {
+        console.error(
+            "チャット利用状態の確認エラー:",
+            error
+        );
+
+        // DBへの問い合わせに失敗した場合は、
+        // 「参加していない」と誤認してチャット欄を閉じない。
+        // 既に参加を確認できている場合は表示を維持し、送信操作を一時停止する。
+        if (participantChatEntry) {
+            if (participantChatStatus) {
+                participantChatStatus.textContent =
+                    "参加状態を確認できません。通信を再確認しています…";
+            }
+
+            if (participantChatInput) {
+                participantChatInput.disabled = true;
+            }
+
+            if (participantChatSendButton) {
+                participantChatSendButton.disabled = true;
+            }
+
+            if (participantChatImageInput) {
+                participantChatImageInput.disabled = true;
+            }
+        }
+
+        return;
+    }
+
+    // 問い合わせが正常終了し、有効な参加者がいなかった場合のみ非表示にする。
     if (!entry) {
         participantChatEntry = null;
 
@@ -800,10 +838,11 @@ async function sendParticipantChatMessage() {
                     p_cancel_token:
                         token,
 
-p_message:
-    text || (imageUrl ? "📷 画像" : ""),
-p_image_url:
-    imageUrl,
+                    p_message:
+                        text || (imageUrl ? "📷 画像" : ""),
+
+                    p_image_url:
+                        imageUrl,
 
                     p_image_path:
                         imagePath
