@@ -1,5 +1,5 @@
 // ========================================
-// YP-Manager URL参加ページ v1.3.9
+// YP-Manager URL参加ページ v1.3.10
 // 辞退・チャットのみ利用・状態復元統合版
 // ========================================
 
@@ -7,7 +7,7 @@ const SUPABASE_URL =
     "https://ilmiebokwfccybrtduxy.supabase.co";
 
 const SUPABASE_KEY =
-    "sb_publishable_tl-vkXmtiYn_f1VtPy689A_dwKCdYg5";
+    "sb_publishable_tl-vkXmtiYn_f1VtPy689A_dwYg5";
 
 const supabaseClient =
     window.supabase.createClient(
@@ -483,20 +483,27 @@ function isChatOnlyEntry(entry) {
         return false;
     }
 
-    // queue-rules.js と同じ基準でチャット専用を判定する。
-    // DBの正規状態は status/lobby_state = "chat_only"。
-    // chat_onlyフラグと旧データのnoteも後方互換として確認する。
-    if (window.YPQueueRules?.isChatOnlyPerson) {
+    // DBの正式なチャット専用状態を優先して判定する。
+    // queue-rules.js の共通判定があればそれを利用する。
+    if (
+        window.YPQueueRules &&
+        typeof window.YPQueueRules.isChatOnlyPerson === "function"
+    ) {
         return window.YPQueueRules.isChatOnlyPerson(entry);
     }
 
+    // queue-rules.js が読み込まれていない場合のフォールバック。
     return Boolean(
-        entry.chat_only === true ||
         entry.status === "chat_only" ||
         entry.lobby_state === "chat_only" ||
+        entry.chat_only === true ||
         entry.source === "chat" ||
         entry.note === "chat_only" ||
-        entry.note === "viewer"
+        (
+            entry.status === "viewer" &&
+            entry.note === "viewer" &&
+            entry.lobby_state !== "watching"
+        )
     );
 }
 
@@ -844,17 +851,46 @@ async function callParticipantRpc(
         data
     );
 
-    const latest =
-        await fetchParticipantById(entry.id);
+    // 各RPCは更新後のparticipants行をjsonbで返す。
+    // 直後に別SELECTすると読み取りタイミングや取得条件の差で
+    // 更新成功を誤判定する可能性があるため、RPCの返却値を正とする。
+    let updated = data;
 
-    if (!latest) {
+    if (typeof updated === "string") {
+        try {
+            updated = JSON.parse(updated);
+        } catch (parseError) {
+            console.error(
+                "RPC結果のJSON解析エラー:",
+                parseError,
+                updated
+            );
+            throw new Error(
+                "更新結果を読み取れませんでした。"
+            );
+        }
+    }
 
+    if (Array.isArray(updated)) {
+        updated = updated[0] || null;
+    }
+
+    if (
+        !updated ||
+        typeof updated !== "object" ||
+        !updated.id ||
+        String(updated.id) !== String(entry.id)
+    ) {
+        console.error(
+            "想定外のRPC返却値:",
+            updated
+        );
         throw new Error(
             "更新後の参加者情報を確認できませんでした。"
         );
     }
 
-    return latest;
+    return updated;
 }
 
 
@@ -1222,8 +1258,18 @@ async function joinAsViewer() {
                 updated.chat_only !== true
             ) {
 
+                console.error(
+                    "チャット専用への切替後の状態が不一致です:",
+                    {
+                        status: updated.status,
+                        lobby_state: updated.lobby_state,
+                        chat_only: updated.chat_only,
+                        participant_id: updated.id
+                    }
+                );
+
                 throw new Error(
-                    "チャットのみ利用への切り替えを確認できませんでした。"
+                    `チャットのみ利用への切り替えを確認できませんでした。（status=${updated.status ?? "null"}, lobby_state=${updated.lobby_state ?? "null"}, chat_only=${String(updated.chat_only)}）`
                 );
             }
 
