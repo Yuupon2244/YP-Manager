@@ -13,6 +13,7 @@
 // ・観戦優遇対象者はアクティブ一覧の上位に置き、3/3まで優先
 // ・試合開始時点で待機していた人だけを、空いた枠へ補充
 // ・試合スナップショットは app_settings に保存し、再読み込み後も復元
+// ・試合開始／終了は1つのボタンで切り替える
 
 (function () {
     "use strict";
@@ -32,11 +33,10 @@
     let startBusy = false;
     let finishBusy = false;
     let roundButton = null;
-    let startButton = null;
     let matchStatus = null;
+    let matchNotice = "";
     let dashboardObserver = null;
 
-    // 通常の定期確認ではカード操作を止めない。
     window.ypIsMainLobbyRotationBusy = () => startBusy || finishBusy;
 
     // ========================================
@@ -63,6 +63,7 @@
         if (typeof isChatOnlyPerson === "function") {
             return isChatOnlyPerson(person);
         }
+
         return Boolean(
             person && (
                 person.chat_only === true ||
@@ -77,23 +78,32 @@
         if (typeof getLobbyState === "function") {
             return getLobbyState(person);
         }
+
         if (person && person.lobby_state) return person.lobby_state;
+
         return person && person.status || "waiting";
     }
 
     function orderCompare(a, b) {
         const av = a && a.display_order;
         const bv = b && b.display_order;
-        const aHas = av !== null && av !== undefined &&
+
+        const aHas =
+            av !== null &&
+            av !== undefined &&
             String(av).trim() !== "" &&
             Number.isFinite(Number(av));
-        const bHas = bv !== null && bv !== undefined &&
+
+        const bHas =
+            bv !== null &&
+            bv !== undefined &&
             String(bv).trim() !== "" &&
             Number.isFinite(Number(bv));
 
         if (aHas && bHas && Number(av) !== Number(bv)) {
             return Number(av) - Number(bv);
         }
+
         if (aHas && !bHas) return -1;
         if (!aHas && bHas) return 1;
 
@@ -131,6 +141,7 @@
         if (window.YPQueueRules) {
             return window.YPQueueRules.isMainWaitingCandidate(person, hostName);
         }
+
         return Boolean(
             person &&
             person.status === "waiting" &&
@@ -144,12 +155,16 @@
         if (window.YPQueueRules) {
             return window.YPQueueRules.sortMainWaiting(participants, hostName);
         }
-        return participants.filter(isMainWaitingCandidate).sort(orderCompare);
+
+        return participants
+            .filter(isMainWaitingCandidate)
+            .sort(orderCompare);
     }
 
     // script.js / main-lobby-settings.js との後方互換
     window.getCurrentLobbyMembers = () => activeMembers();
-    window.getNextCandidates = (limit = 3) => mainWaitingQueue().slice(0, limit);
+    window.getNextCandidates = (limit = 3) =>
+        mainWaitingQueue().slice(0, limit);
 
     function updateLocal(id, patch) {
         participants = participants.map(person =>
@@ -167,7 +182,9 @@
 
     function getMatchCount(person) {
         const count = Number(person && person.match_count);
+
         if (!Number.isFinite(count)) return 0;
+
         return Math.max(0, Math.min(getMatchTarget(person), count));
     }
 
@@ -176,6 +193,7 @@
 
     function getNextCycleGameNumber() {
         if (!matchState || matchState.status !== "completed") return 1;
+
         return Number(matchState.cycle_game_number) === 1 ? 2 : 1;
     }
 
@@ -217,15 +235,15 @@
 
     // 個別カウント・個別終了は全体スナップショットと競合するため無効化。
     window.adjustMatchCount = async function () {
-        alert("試合数は『試合開始・参加者を確定』と『試合終了・カウント更新』で一括管理します。");
+        alert("試合数は画面上部の開始／終了ボタンで一括管理します。");
     };
 
     window.finishMatch = async function () {
-        alert("個別の試合終了は使用せず、画面上部の『試合終了・カウント更新』を使ってください。");
+        alert("個別の試合終了は使用せず、画面上部の試合管理ボタンを使ってください。");
     };
 
     window.finishTwoGames = async function () {
-        alert("個別の2試合終了は廃止しました。全体の試合終了ボタンを使ってください。");
+        alert("個別の2試合終了は廃止しました。画面上部の試合管理ボタンを使ってください。");
     };
 
     function removeLegacyControls() {
@@ -269,6 +287,7 @@
         ).forEach(button => {
             if (rosterActions.has(String(button.textContent || "").trim())) {
                 button.disabled = rosterLocked;
+
                 button.title = rosterLocked
                     ? "試合中は今回の参加者を固定しています。試合終了後に変更できます。"
                     : "";
@@ -284,8 +303,10 @@
 
         const wrappedRender = function (...args) {
             const result = oldRender.apply(this, args);
+
             removeLegacyControls();
             updateMatchControls();
+
             return result;
         };
 
@@ -305,6 +326,7 @@
             .maybeSingle();
 
         if (error) throw error;
+
         return data ? data.value : null;
     }
 
@@ -350,12 +372,14 @@
         }
 
         window.getRoomCapacity = () => capacity;
+
         return capacity;
     }
 
     async function loadHostName() {
         try {
             const value = await readSetting(HOST_NAME_KEY);
+
             hostName = value == null ? "" : String(value).trim();
 
             if (window.YPQueueRules) {
@@ -476,6 +500,7 @@
             }, { onConflict: "key" });
 
         if (error) throw error;
+
         matchState = state;
     }
 
@@ -502,6 +527,7 @@
             }
 
             matchState = parsed;
+
             return parsed;
 
         } catch (error) {
@@ -581,6 +607,7 @@
         }
 
         updateLocal(id, { watcher_bonus: true });
+
         return true;
     }
 
@@ -623,6 +650,7 @@
         }
 
         await loadParticipants();
+
         return true;
     }
 
@@ -685,7 +713,7 @@
     }
 
     // ========================================
-    // 試合開始ボタン／終了ボタン
+    // 試合開始／終了の1ボタン管理
     // ========================================
 
     function ensureControls() {
@@ -694,10 +722,16 @@
 
         if (oldAllButton) oldAllButton.remove();
 
-        let end =
+        // 旧UIの独立した開始ボタンは削除する。
+        const oldStartButton =
+            document.getElementById("startCurrentMatchButton");
+
+        if (oldStartButton) oldStartButton.remove();
+
+        let button =
             document.getElementById("bulkFinishOneMatchButton");
 
-        if (!end) {
+        if (!button) {
             const playingList =
                 document.getElementById("playingList");
 
@@ -706,48 +740,26 @@
 
             if (!parent) return;
 
-            end = document.createElement("button");
-            end.id = "bulkFinishOneMatchButton";
-            end.type = "button";
-            end.className = "finish";
+            button = document.createElement("button");
+            button.id = "bulkFinishOneMatchButton";
+            button.type = "button";
+            button.className = "call";
 
-            parent.insertBefore(end, playingList);
+            parent.insertBefore(button, playingList);
         }
 
         // script.js が登録した旧クリックイベントを除去して付け直す。
-        if (end.dataset.ypRotationV2Bound !== "true") {
-            const replacement = end.cloneNode(true);
+        if (button.dataset.ypRotationV2Bound !== "true") {
+            const replacement = button.cloneNode(true);
             replacement.id = "bulkFinishOneMatchButton";
-            end.replaceWith(replacement);
-            end = replacement;
+            button.replaceWith(replacement);
+            button = replacement;
 
-            end.dataset.ypRotationV2Bound = "true";
-            end.addEventListener("click", finishCurrentMatch);
+            button.dataset.ypRotationV2Bound = "true";
+            button.addEventListener("click", handleMatchButtonClick);
         }
 
-        end.textContent = "⏹ 試合終了・カウント更新";
-        roundButton = end;
-
-        let start =
-            document.getElementById("startCurrentMatchButton");
-
-        if (!start) {
-            start = document.createElement("button");
-            start.id = "startCurrentMatchButton";
-            start.type = "button";
-            start.className = "call";
-            start.style.marginBottom = "8px";
-
-            end.parentElement.insertBefore(start, end);
-        }
-
-        if (start.dataset.ypRotationV2Bound !== "true") {
-            start.dataset.ypRotationV2Bound = "true";
-            start.addEventListener("click", startCurrentMatch);
-        }
-
-        start.textContent = "▶ 試合開始・参加者を確定";
-        startButton = start;
+        roundButton = button;
 
         let status =
             document.getElementById("currentMatchStatus");
@@ -756,63 +768,113 @@
             status = document.createElement("div");
             status.id = "currentMatchStatus";
             status.className = "date";
-            status.style.margin = "6px 0 12px";
+            status.style.margin = "8px 0 12px";
+            status.style.display = "block";
+            status.style.width = "100%";
+            status.style.flexBasis = "100%";
 
-            start.parentElement.insertBefore(status, start);
+            button.insertAdjacentElement("afterend", status);
+
+        } else if (status.previousElementSibling !== button) {
+            button.insertAdjacentElement("afterend", status);
         }
 
         matchStatus = status;
+
         updateMatchControls();
     }
 
     function updateMatchControls() {
-        if (!startButton || !roundButton || !matchStatus) return;
+        if (!roundButton) return;
 
-        const running = matchState && (
+        const running = Boolean(matchState && (
             matchState.status === "running" ||
             matchState.status === "processing"
-        );
+        ));
 
-        startButton.disabled =
-            Boolean(running || startBusy || finishBusy);
-
-        roundButton.disabled =
-            Boolean(!running || startBusy || finishBusy);
+        roundButton.disabled = Boolean(startBusy || finishBusy);
 
         if (startBusy) {
-            matchStatus.textContent =
-                "試合開始時の参加者を保存しています…";
+            roundButton.textContent = "⏳ 試合開始を記録中…";
+            roundButton.className = "call";
 
-        } else if (finishBusy) {
-            matchStatus.textContent =
-                "試合終了処理中です…";
+            if (matchStatus) {
+                matchStatus.textContent =
+                    "今回の試合に参加する人を記録しています。";
+            }
 
-        } else if (running) {
-            const names = (matchState.playing || []).length;
-            const watchers = (matchState.watcher_ids || []).length;
-            const cycleLabel =
-                `第${Number(matchState.cycle_game_number) === 2 ? 2 : 1}戦 / 2戦`;
+            return;
+        }
 
-            matchStatus.textContent =
-                matchState.status === "processing"
-                    ? `${cycleLabel}：前回の試合終了処理が未完了です。『試合終了・カウント更新』で再開できます。（参加確定 ${names}人／観戦 ${watchers}人）`
-                    : `${cycleLabel}：試合中。参加者 ${names}人を確定済み／観戦 ${watchers}人。試合終了後にカウントを更新してください。`;
+        if (finishBusy) {
+            roundButton.textContent = "⏳ 試合終了を処理中…";
+            roundButton.className = "finish";
 
+            if (matchStatus) {
+                matchStatus.textContent =
+                    "試合数・観戦者・次の参加者を更新しています…";
+            }
+
+            return;
+        }
+
+        if (running) {
             roundButton.textContent =
                 matchState.status === "processing"
                     ? "↻ 試合終了処理を再開"
                     : "⏹ 試合終了・カウント更新";
 
-        } else {
+            roundButton.className = "finish";
+
+            if (matchStatus) {
+                const names = (matchState.playing || []).length;
+                const watchers = (matchState.watcher_ids || []).length;
+
+                const cycleLabel =
+                    `第${Number(matchState.cycle_game_number) === 2 ? 2 : 1}戦 / 2戦`;
+
+                matchStatus.textContent =
+                    matchState.status === "processing"
+                        ? `${cycleLabel}：終了処理が未完了です。このボタンでもう一度続きから処理できます。（参加者 ${names}人／観戦 ${watchers}人）`
+                        : `${cycleLabel}：試合中。参加者 ${names}人を記録済み／観戦 ${watchers}人。試合終了後、同じボタンを押してください。`;
+            }
+
+            return;
+        }
+
+        roundButton.textContent = "▶ 試合開始";
+        roundButton.className = "call";
+
+        if (matchStatus) {
             const nextGameNumber = getNextCycleGameNumber();
 
-            matchStatus.textContent =
-                `次は第${nextGameNumber}戦 / 2戦。試合直前に『試合開始・参加者を確定』を押してください。開始後に加わった人は次の試合からカウントされます。`;
+            const nextText =
+                `次は第${nextGameNumber}戦 / 2戦。試合が始まる直前にこのボタンを押してください。`;
 
-            roundButton.textContent =
-                "⏹ 試合終了・カウント更新";
+            matchStatus.textContent = matchNotice
+                ? `${matchNotice}　${nextText}`
+                : `${nextText} 開始後に参加した人は次の試合からカウントされます。`;
         }
     }
+
+    // 1つのボタンで開始／終了を切り替える。
+    async function handleMatchButtonClick() {
+        if (startBusy || finishBusy) return;
+
+        if (
+            matchState &&
+            (matchState.status === "running" ||
+             matchState.status === "processing")
+        ) {
+            await finishCurrentMatch();
+        } else {
+            await startCurrentMatch();
+        }
+    }
+
+    // ========================================
+    // 試合開始
+    // ========================================
 
     async function startCurrentMatch() {
         if (startBusy || finishBusy) return;
@@ -853,14 +915,8 @@
 
             const cycleGameNumber = getNextCycleGameNumber();
 
-            const ok = confirm(
-                `部屋内 第${cycleGameNumber}戦 / 2戦目\n` +
-                `今回の試合参加者 ${players.length}人を確定します。\n` +
-                `観戦者 ${watchers.length}人はカウント対象外です。\n\n` +
-                "試合が始まる直前に実行してください。よろしいですか？"
-            );
-
-            if (!ok) return;
+            // 確認ダイアログを挟まず、クリック時点の参加者を保存する。
+            matchNotice = "";
 
             const snapshot = {
                 version: 2,
@@ -899,12 +955,12 @@
 
         } catch (error) {
             console.error(
-                "[Main Lobby] 試合開始確定エラー:",
+                "[Main Lobby] 試合開始記録エラー:",
                 error
             );
 
             alert(
-                `試合開始時の参加者を保存できませんでした。\n${error.message || error}`
+                `試合開始を記録できませんでした。\n${error.message || error}`
             );
 
         } finally {
@@ -933,6 +989,7 @@
             .maybeSingle();
 
         if (error) throw error;
+
         return data || null;
     }
 
@@ -944,6 +1001,7 @@
                 "[Main Lobby] 試合中に削除された参加者はカウントをスキップ:",
                 snapshotPerson.name
             );
+
             return { deleted: true, finished: false };
         }
 
@@ -1087,6 +1145,7 @@
 
     async function fillFromStartWaitingSnapshot(waitingIds, finishedCount) {
         let added = 0;
+
         const limit = Math.max(0, Number(finishedCount) || 0);
         const cap = await readCapacity();
 
@@ -1116,6 +1175,7 @@
         }
 
         if (added) await loadParticipants();
+
         return added;
     }
 
@@ -1154,6 +1214,10 @@
         }
     }
 
+    // ========================================
+    // 試合終了
+    // ========================================
+
     async function finishCurrentMatch() {
         if (finishBusy || startBusy) return;
 
@@ -1172,19 +1236,13 @@
                 !["running", "processing"].includes(stored.status)
             ) {
                 alert(
-                    "試合開始時の参加者記録がありません。試合前に『試合開始・参加者を確定』を押してください。"
+                    "試合開始の記録がありません。試合前に『▶ 試合開始』を押してください。"
                 );
+
                 return;
             }
 
-            if (stored.status === "running") {
-                const ok = confirm(
-                    `試合参加者 ${(stored.playing || []).length}人のカウントを更新します。\n` +
-                    `観戦者 ${(stored.watcher_ids || []).length}人は今回の試合数に加算しません。\n\n実行しますか？`
-                );
-
-                if (!ok) return;
-            }
+            // 終了側も確認ダイアログを挟まず、同じボタンで即時処理する。
 
             stored.status = "processing";
             await saveMatchState(stored);
@@ -1193,9 +1251,11 @@
             await loadParticipants();
 
             const failures = [];
+
             const processed = new Set(
                 stored.processed_player_ids || []
             );
+
             const finishedIds = new Set(
                 stored.finished_player_ids || []
             );
@@ -1266,7 +1326,7 @@
 
                 alert(
                     "一部の処理が完了していません。\n" +
-                    "『試合終了処理を再開』で未完了分を続けられます。\n\n" +
+                    "同じボタンから未完了分を続けられます。\n\n" +
                     failures.join("\n")
                 );
 
@@ -1308,13 +1368,13 @@
                 )
                 .filter(Boolean);
 
-            alert(
-                `第${Number(stored.cycle_game_number) === 2 ? 2 : 1}戦の試合終了処理が完了しました。\n` +
-                `カウント対象：${(stored.playing || []).length}人\n` +
-                `規定試合数に達して交代：${finishedIds.size}人\n` +
-                `待機列から補充：${filled}人\n` +
-                `今回観戦して次部屋優先：${watcherNames.length ? watcherNames.join("、") : "なし"}`
-            );
+            matchNotice =
+                `第${Number(stored.cycle_game_number) === 2 ? 2 : 1}戦完了：` +
+                `カウント ${(stored.playing || []).length}人／` +
+                `交代 ${finishedIds.size}人／補充 ${filled}人／` +
+                `次部屋優先 ${watcherNames.length ? watcherNames.join("・") : "なし"}`;
+
+            updateMatchControls();
 
         } catch (error) {
             console.error(
@@ -1418,32 +1478,49 @@
         updateDashboard();
     }
 
-function updateDashboard() {
-    const dashboard = document.getElementById("lobbyDashboard");
-    if (!dashboard || dashboard.children.length < 2) return;
+    function updateDashboard() {
+        const dashboard =
+            document.getElementById("lobbyDashboard");
 
-    const active = activeMembers();
-    const playing = active.filter(person => stateOf(person) === "playing").length;
-    const watching = active.filter(person => stateOf(person) === "watching").length;
-    const waiting = participants.filter(isMainWaitingCandidate).length;
-    const priority = active.filter(person => person.watcher_bonus === true).length;
+        if (!dashboard || dashboard.children.length < 2) return;
 
-    const title = `🎮 メインロビー ${active.length} / ${capacity}人`;
-    const stats = `🟢 参加中 ${playing}人　👀 観戦 ${watching}人　⭐ 次部屋優先 ${priority}人　🟡 待機 ${waiting}人`;
+        const active = activeMembers();
 
-    // 表示内容が変わったときだけ書き換える。
-    // MutationObserverによる無限ループを防ぐ。
-    if (dashboard.children[0].textContent !== title) {
-        dashboard.children[0].textContent = title;
-        dashboard.children[0].style.fontWeight = "bold";
-        dashboard.children[0].style.marginBottom = "8px";
+        const playing = active.filter(person =>
+            stateOf(person) === "playing"
+        ).length;
+
+        const watching = active.filter(person =>
+            stateOf(person) === "watching"
+        ).length;
+
+        const waiting = participants.filter(
+            isMainWaitingCandidate
+        ).length;
+
+        const priority = active.filter(person =>
+            person.watcher_bonus === true
+        ).length;
+
+        const title =
+            `🎮 メインロビー ${active.length} / ${capacity}人`;
+
+        const stats =
+            `🟢 参加中 ${playing}人　👀 観戦 ${watching}人　⭐ 次部屋優先 ${priority}人　🟡 待機 ${waiting}人`;
+
+        // 表示内容が変わったときだけ書き換える。
+        // MutationObserverによる無限ループを防ぐ。
+        if (dashboard.children[0].textContent !== title) {
+            dashboard.children[0].textContent = title;
+            dashboard.children[0].style.fontWeight = "bold";
+            dashboard.children[0].style.marginBottom = "8px";
+        }
+
+        if (dashboard.children[1].textContent !== stats) {
+            dashboard.children[1].textContent = stats;
+            dashboard.children[1].style.marginBottom = "8px";
+        }
     }
-
-    if (dashboard.children[1].textContent !== stats) {
-        dashboard.children[1].textContent = stats;
-        dashboard.children[1].style.marginBottom = "8px";
-    }
-}    
 
     function observeDashboard() {
         const dashboard =
@@ -1498,6 +1575,7 @@ function updateDashboard() {
     async function waitForSession() {
         for (let i = 0; i < 100; i++) {
             if (currentSessionId) return true;
+
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 
