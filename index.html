@@ -106,6 +106,63 @@
     </div>
 
     <!-- ================================= -->
+    <!-- 下部帯の試合数表示 -->
+    <!-- ================================= -->
+
+    <div
+        id="guideMatchNumberArea"
+        style="
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin: 0 0 22px;
+            padding: 12px 14px;
+            background: #363636;
+            border-radius: 12px;
+        "
+    >
+        <div style="min-width: 0;">
+            <div style="font-size: 14px; font-weight: bold; color: #fff;">
+                📣 下部帯の試合数表示
+            </div>
+
+            <div
+                id="guideMatchNumberStatus"
+                role="status"
+                aria-live="polite"
+                style="
+                    font-size: 12px;
+                    color: #bbb;
+                    margin-top: 5px;
+                "
+            >
+                設定を読み込み中…
+            </div>
+        </div>
+
+        <button
+            id="guideMatchNumberToggle"
+            type="button"
+            disabled
+            style="
+                min-width: 132px;
+                padding: 11px 18px;
+                border: none;
+                border-radius: 9px;
+                background: #39b54a;
+                color: #fff;
+                font-size: 17px;
+                font-weight: bold;
+                cursor: pointer;
+            "
+        >
+            読み込み中…
+        </button>
+    </div>
+
+    <!-- ================================= -->
     <!-- 再参加受付 -->
     <!-- ================================= -->
 
@@ -433,7 +490,6 @@ const queueDisplayStatusText =
     );
 
 let queueDisplayEnabled = true;
-
 let queueDisplayBusy = false;
 
 
@@ -489,16 +545,10 @@ async function loadQueueDisplaySetting() {
             .eq("key", "stream_queue_visible")
             .maybeSingle();
 
-
         if (error) {
             throw error;
         }
 
-
-        /*
-         * 設定が存在しなければ初期状態はON。
-         * 実際の保存形式は既存の設定に合わせて文字列を使う。
-         */
         if (!data) {
 
             queueDisplayEnabled = true;
@@ -509,7 +559,6 @@ async function loadQueueDisplaySetting() {
                 String(data.value) === "true";
 
         }
-
 
         renderQueueDisplayButton();
 
@@ -543,16 +592,13 @@ async function toggleQueueDisplaySetting() {
     }
 
     queueDisplayBusy = true;
-
     queueDisplayToggleButton.disabled = true;
 
     queueDisplayToggleButton.textContent =
         "変更を保存中…";
 
-
     const newValue =
         !queueDisplayEnabled;
-
 
     try {
 
@@ -563,25 +609,19 @@ async function toggleQueueDisplaySetting() {
             .upsert(
                 {
                     key: "stream_queue_visible",
-
                     value: String(newValue),
-
-                    updated_at:
-                        new Date().toISOString()
+                    updated_at: new Date().toISOString()
                 },
                 {
                     onConflict: "key"
                 }
             );
 
-
         if (error) {
             throw error;
         }
 
-
         queueDisplayEnabled = newValue;
-
         renderQueueDisplayButton();
 
     } catch (error) {
@@ -603,7 +643,6 @@ async function toggleQueueDisplaySetting() {
     } finally {
 
         queueDisplayBusy = false;
-
         queueDisplayToggleButton.disabled = false;
 
     }
@@ -620,6 +659,9 @@ queueDisplayToggleButton.addEventListener(
 loadQueueDisplaySetting();
 
 </script>
+
+<!-- 下部帯の試合数表示設定（participantsの試合数とは独立） -->
+<script src="guide-match-setting.js?v=20261105-1"></script>
 
 </body>
 </html>
