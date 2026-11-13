@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="ja">
 
@@ -91,24 +92,12 @@
             チャットを確認中…
         </div>
 
-
-        <!-- ================================= -->
-        <!-- チャット表示 -->
-        <!-- ================================= -->
-
         <div
             id="participantChatList"
             class="shared-chat-list"
         ></div>
 
-
-        <!-- ================================= -->
-        <!-- チャット入力 -->
-        <!-- ================================= -->
-
         <div class="shared-chat-compose">
-
-            <!-- 選択画像プレビュー -->
 
             <div
                 id="participantChatImagePreview"
@@ -136,9 +125,6 @@
 
             </div>
 
-
-            <!-- 画像選択 -->
-
             <div class="shared-chat-input-tools">
 
                 <label
@@ -157,16 +143,12 @@
 
             </div>
 
-
-            <!-- 本文 -->
-
             <textarea
                 id="participantChatInput"
                 maxlength="100"
                 rows="2"
                 placeholder="メッセージを入力（100文字まで）"
             ></textarea>
-
 
             <div class="shared-chat-compose-bottom">
 
@@ -186,7 +168,6 @@
 
         </div>
 
-
         <div
             id="participantChatMessage"
             class="shared-chat-feedback"
@@ -196,14 +177,11 @@
 
 </div>
 
-
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <script src="queue-rules.js?v=20261026-1"></script>
-<script src="join.js?v=20261026-queue1"></script>
-
+<script src="join.js?v=20261114-mobilefix1"></script>
 <script src="participant-chat.js"></script>
 
 </body>
-
 </html>
